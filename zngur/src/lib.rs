@@ -23,7 +23,7 @@ use zngur_generator::{ParsedZngFile, ZngurGenerator};
 ///     .generate();
 /// ```
 pub struct Zngur {
-    zng_file: PathBuf,
+    zng_files: Vec<PathBuf>,
     h_file_path: Option<PathBuf>,
     cpp_file_path: Option<PathBuf>,
     rs_file_path: Option<PathBuf>,
@@ -32,7 +32,19 @@ pub struct Zngur {
 impl Zngur {
     pub fn from_zng_file(zng_file_path: impl AsRef<Path>) -> Self {
         Zngur {
-            zng_file: zng_file_path.as_ref().to_owned(),
+            zng_files: vec![zng_file_path.as_ref().to_owned()],
+            h_file_path: None,
+            cpp_file_path: None,
+            rs_file_path: None,
+        }
+    }
+
+    pub fn from_zng_files(zng_file_paths: Vec<impl AsRef<Path>>) -> Self {
+        Zngur {
+            zng_files: zng_file_paths
+                .into_iter()
+                .map(|p| p.as_ref().to_owned())
+                .collect(),
             h_file_path: None,
             cpp_file_path: None,
             rs_file_path: None,
@@ -54,12 +66,8 @@ impl Zngur {
         self
     }
 
-    pub fn generate(self) {
-        let path = self.zng_file;
-        let file = std::fs::read_to_string(path).unwrap();
-        let file = ZngurGenerator::build_from_zng(ParsedZngFile::parse("main.zng", &file));
-
-        let (rust, h, cpp) = file.render();
+    fn emit(self, generator: ZngurGenerator) {
+        let (rust, h, cpp) = generator.render();
         let rs_file_path = self.rs_file_path.expect("No rs file path provided");
         let h_file_path = self.h_file_path.expect("No h file path provided");
         File::create(rs_file_path)
@@ -77,5 +85,25 @@ impl Zngur {
                 .write_all(cpp.as_bytes())
                 .unwrap();
         }
+    }
+
+    pub fn generate(self) {
+        assert_eq!(
+            self.zng_files.len(),
+            1,
+            "Exactly one zng file must be provided"
+        );
+        let path = &self.zng_files[0];
+        let file = std::fs::read_to_string(path).unwrap();
+        let file = ZngurGenerator::build_from_zng(ParsedZngFile::parse(
+            path.file_name().unwrap().to_str().unwrap(),
+            &file,
+        ));
+
+        self.emit(file);
+    }
+
+    pub fn generate_merged(self) {
+        todo!()
     }
 }
