@@ -101,7 +101,7 @@ pub struct ZngurTrait {
 
 #[derive(Default)]
 pub struct ZngurFile {
-    pub types: Vec<ZngurType>,
+    pub types: HashMap<RustType, ZngurType>,
     pub traits: HashMap<RustTrait, ZngurTrait>,
     pub funcs: Vec<ZngurFn>,
     pub extern_cpp_funcs: Vec<ZngurExternCppFn>,

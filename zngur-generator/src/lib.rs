@@ -33,15 +33,18 @@ impl ZngurGenerator {
         let mut zng = self.0;
 
         // Unit type is a bit special, and almost everyone needs it, so we add it ourself.
-        zng.types.push(ZngurType {
-            ty: RustType::UNIT,
-            layout: LayoutPolicy::StackAllocated { size: 0, align: 1 },
-            wellknown_traits: vec![ZngurWellknownTrait::Copy],
-            methods: vec![],
-            constructors: vec![],
-            cpp_value: None,
-            cpp_ref: None,
-        });
+        zng.types.insert(
+            RustType::UNIT,
+            ZngurType {
+                ty: RustType::UNIT,
+                layout: LayoutPolicy::StackAllocated { size: 0, align: 1 },
+                wellknown_traits: vec![ZngurWellknownTrait::Copy],
+                methods: vec![],
+                constructors: vec![],
+                cpp_value: None,
+                cpp_ref: None,
+            },
+        );
         let mut cpp_file = CppFile::default();
         cpp_file.additional_includes = zng.additional_includes;
         let mut rust_file = RustFile::default();
@@ -54,18 +57,18 @@ impl ZngurGenerator {
             rust_file.enable_panic_to_exception();
             cpp_file.panic_to_exception = true;
         }
-        for ty_def in zng.types {
+        for (ty, ty_def) in zng.types {
             let is_copy = ty_def.wellknown_traits.contains(&ZngurWellknownTrait::Copy);
             match ty_def.layout {
                 LayoutPolicy::StackAllocated { size, align } => {
-                    rust_file.add_static_size_assert(&ty_def.ty, size);
-                    rust_file.add_static_align_assert(&ty_def.ty, align);
+                    rust_file.add_static_size_assert(&ty, size);
+                    rust_file.add_static_align_assert(&ty, align);
                 }
                 LayoutPolicy::HeapAllocated => (),
                 LayoutPolicy::OnlyByRef => (),
             }
             if is_copy {
-                rust_file.add_static_is_copy_assert(&ty_def.ty);
+                rust_file.add_static_is_copy_assert(&ty);
             }
             let mut cpp_methods = vec![];
             let mut constructors = vec![];
@@ -73,17 +76,15 @@ impl ZngurGenerator {
             for constructor in ty_def.constructors {
                 match constructor.name {
                     Some(name) => {
-                        let rust_link_names = rust_file.add_constructor(
-                            &format!("{}::{}", ty_def.ty, name),
-                            &constructor.inputs,
-                        );
+                        let rust_link_names = rust_file
+                            .add_constructor(&format!("{}::{}", ty, name), &constructor.inputs);
                         cpp_methods.push(CppMethod {
                             name: cpp_handle_keyword(&name).to_owned(),
                             kind: ZngurMethodReceiver::Static,
                             sig: CppFnSig {
                                 rust_link_name: rust_link_names.constructor,
                                 inputs: constructor.inputs.iter().map(|x| x.1.into_cpp()).collect(),
-                                output: ty_def.ty.into_cpp(),
+                                output: ty.into_cpp(),
                             },
                         });
                         cpp_methods.push(CppMethod {
@@ -91,30 +92,30 @@ impl ZngurGenerator {
                             kind: ZngurMethodReceiver::Ref(Mutability::Not),
                             sig: CppFnSig {
                                 rust_link_name: rust_link_names.match_check,
-                                inputs: vec![ty_def.ty.into_cpp().into_ref()],
+                                inputs: vec![ty.into_cpp().into_ref()],
                                 output: CppType::from("uint8_t"),
                             },
                         });
                     }
                     None => {
                         let rust_link_name = rust_file
-                            .add_constructor(&format!("{}", ty_def.ty), &constructor.inputs)
+                            .add_constructor(&format!("{}", ty), &constructor.inputs)
                             .constructor;
                         constructors.push(CppFnSig {
                             rust_link_name,
                             inputs: constructor.inputs.iter().map(|x| x.1.into_cpp()).collect(),
-                            output: ty_def.ty.into_cpp(),
+                            output: ty.into_cpp(),
                         });
                     }
                 }
             }
-            if let RustType::Tuple(fields) = &ty_def.ty {
+            if let RustType::Tuple(fields) = &ty {
                 if !fields.is_empty() {
                     let rust_link_name = rust_file.add_tuple_constructor(&fields);
                     constructors.push(CppFnSig {
                         rust_link_name,
                         inputs: fields.iter().map(|x| x.into_cpp()).collect(),
-                        output: ty_def.ty.into_cpp(),
+                        output: ty.into_cpp(),
                     });
                 }
             }
@@ -122,7 +123,7 @@ impl ZngurGenerator {
                 .wellknown_traits
                 .contains(&ZngurWellknownTrait::Unsized);
             for wellknown_trait in ty_def.wellknown_traits {
-                let data = rust_file.add_wellknown_trait(&ty_def.ty, wellknown_trait, is_unsized);
+                let data = rust_file.add_wellknown_trait(&ty, wellknown_trait, is_unsized);
                 wellknown_traits.push(data);
             }
             for method_details in ty_def.methods {
@@ -131,11 +132,11 @@ impl ZngurGenerator {
                     use_path,
                     deref,
                 } = method_details;
-                let (rusty_inputs, inputs) = real_inputs_of_method(&method, &ty_def.ty);
+                let (rusty_inputs, inputs) = real_inputs_of_method(&method, &ty);
                 let rust_link_name = rust_file.add_function(
                     &format!(
                         "<{}>::{}::<{}>",
-                        deref.as_ref().unwrap_or(&ty_def.ty),
+                        deref.as_ref().unwrap_or(&ty),
                         method.name,
                         method.generics.iter().join(", "),
                     ),
@@ -155,17 +156,17 @@ impl ZngurGenerator {
                 });
             }
             cpp_file.type_defs.push(CppTypeDefinition {
-                ty: ty_def.ty.into_cpp(),
-                layout: rust_file.add_layout_policy_shim(&ty_def.ty, ty_def.layout),
+                ty: ty.into_cpp(),
+                layout: rust_file.add_layout_policy_shim(&ty, ty_def.layout),
                 constructors,
                 methods: cpp_methods,
                 wellknown_traits,
                 cpp_value: ty_def.cpp_value.map(|(field, cpp_type)| {
-                    let rust_link_name = rust_file.add_cpp_value_bridge(&ty_def.ty, &field);
+                    let rust_link_name = rust_file.add_cpp_value_bridge(&ty, &field);
                     (rust_link_name, cpp_type)
                 }),
                 cpp_ref: ty_def.cpp_ref,
-                from_trait: if let RustType::Boxed(b) = &ty_def.ty {
+                from_trait: if let RustType::Boxed(b) = &ty {
                     if let RustType::Dyn(tr, _) = b.as_ref() {
                         if let RustTrait::Fn {
                             name,
@@ -192,7 +193,7 @@ impl ZngurGenerator {
                 } else {
                     None
                 },
-                from_trait_ref: if let RustType::Dyn(tr, _) = &ty_def.ty {
+                from_trait_ref: if let RustType::Dyn(tr, _) = &ty {
                     Some(tr.clone())
                 } else {
                     None

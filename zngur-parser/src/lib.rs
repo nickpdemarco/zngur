@@ -324,15 +324,19 @@ Use one of `#layout(size = X, align = Y)`, `#heap_allocated` or `#only_by_ref`."
                         ty.span,
                     );
                 };
-                r.types.push(ZngurType {
-                    ty: ty.inner.to_zngur(base),
-                    layout,
-                    methods,
-                    wellknown_traits: wt,
-                    constructors,
-                    cpp_value,
-                    cpp_ref,
-                });
+                let ty = ty.inner.to_zngur(base);
+                r.types.insert(
+                    ty.clone(),
+                    ZngurType {
+                        ty,
+                        layout,
+                        methods,
+                        wellknown_traits: wt,
+                        constructors,
+                        cpp_value,
+                        cpp_ref,
+                    },
+                );
             }
             ParsedItem::Trait { tr, methods } => {
                 let tr = tr.to_zngur(base);
