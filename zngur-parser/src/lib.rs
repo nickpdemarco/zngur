@@ -525,7 +525,7 @@ static LATEST_FILENAME: Mutex<String> = Mutex::new(String::new());
 static LATEST_TEXT: Mutex<String> = Mutex::new(String::new());
 
 impl ParsedZngFile<'_> {
-    pub fn parse(filename: &str, text: &str) -> ZngurFile {
+    pub fn parse_into(zngur: &mut ZngurFile, filename: &str, text: &str) {
         *LATEST_FILENAME.lock().unwrap() = filename.to_string();
         *LATEST_TEXT.lock().unwrap() = text.to_string();
         let (tokens, errs) = lexer().parse(text).into_output_errors();
@@ -544,15 +544,16 @@ impl ParsedZngFile<'_> {
             let errs = errs.into_iter().map(|e| e.map_token(|c| c.to_string()));
             emit_error(errs);
         };
-        ast.0.into_zngur_file()
+
+        for item in ast.0.0 {
+            item.add_to_zngur_file(zngur, &[]);
+        }
     }
 
-    pub fn into_zngur_file(self) -> ZngurFile {
-        let mut r = ZngurFile::default();
-        for item in self.0 {
-            item.add_to_zngur_file(&mut r, &[]);
-        }
-        r
+    pub fn parse(filename: &str, text: &str) -> ZngurFile {
+        let mut zngur = ZngurFile::default();
+        Self::parse_into(&mut zngur, filename, text);
+        zngur
     }
 }
 

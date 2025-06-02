@@ -104,6 +104,16 @@ impl Zngur {
     }
 
     pub fn generate_merged(self) {
-        todo!()
+        let mut zngur = zngur_generator::ZngurFile::default();
+        for path in &self.zng_files {
+            let file = std::fs::read_to_string(&path).unwrap();
+            ParsedZngFile::parse_into(
+                &mut zngur,
+                path.file_name().unwrap().to_str().unwrap(),
+                &file,
+            );
+        }
+        let file = ZngurGenerator::build_from_zng(zngur);
+        self.emit(file);
     }
 }
