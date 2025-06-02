@@ -6,9 +6,9 @@ Checkpoint 4
 PrintOnDrop(A) has been dropped
 Checkpoint 5
 PrintOnDrop(cpp_V3) has been dropped
+PrintOnDrop(cpp_V2) has been dropped
 Checkpoint 6
 PrintOnDrop(cpp_V1) has been dropped
-PrintOnDrop(cpp_V2) has been dropped
 Checkpoint 7
 Checkpoint 8
 PrintOnDrop(rust_V1) has been dropped
@@ -40,7 +40,8 @@ Checkpoint 20
 Checkpoint 21
 PrintOnDrop(A) has been dropped
 Checkpoint 22
-thread '<unnamed>' panicked at examples/memory_management/src/lib.rs:29:9:
+
+thread '<unnamed>' panicked at examples/memory_management/src/lib.rs:30:9:
 consume_and_panic executed with value B
 note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 PrintOnDrop(B) has been dropped
@@ -59,15 +60,15 @@ Checkpoint 30
 PrintOnDrop(elem1) has been dropped
 PrintOnDrop(elem2) has been dropped
 Checkpoint 31
-[main.cpp:112] PrintOnDrop(rust::Str::from_char_star("dbg_A")) = PrintOnDrop(
+[main.cpp:113] PrintOnDrop("dbg_A"_rs) = PrintOnDrop(
     "dbg_A",
 )
 Checkpoint 32
-[main.cpp:114] std::move(p1) = PrintOnDrop(
+[main.cpp:115] std::move(p1) = PrintOnDrop(
     "dbg_A",
 )
 Checkpoint 33
-[main.cpp:116] p2 = PrintOnDrop(
+[main.cpp:117] p2 = PrintOnDrop(
     "dbg_A",
 )
 Checkpoint 34

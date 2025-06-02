@@ -8,12 +8,27 @@
     #include <osmium/visitor.hpp>
 "
 
+use ::std::string::String as String;
+
 type str {
     wellknown_traits(?Sized);
 
     fn as_ptr(&self) -> *const u8;
     fn len(&self) -> usize;
     fn to_string(&self) -> ::std::string::String;
+}
+
+type ::std::ffi::CStr {
+    wellknown_traits(?Sized);
+
+    fn from_ptr(*const i8) -> &::std::ffi::CStr;
+    fn to_str(&self) -> ::std::result::Result<&str, ::std::str::Utf8Error>;
+}
+
+type ::std::result::Result<&str, ::std::str::Utf8Error> {
+    #layout(size = 24, align = 8);
+
+    fn expect(self, &str) -> &str;
 }
 
 type ::std::option::Option<&str> {
@@ -23,10 +38,10 @@ type ::std::option::Option<&str> {
     constructor Some(&str);
 }
 
-type ::std::string::String {
+type String  {
     #layout(size = 24, align = 8);
 
-    fn new() -> ::std::string::String;
+    fn new() -> String;
     fn push_str(&mut self, &str);
 }
 
@@ -38,7 +53,7 @@ type crate::Reader {
     #cpp_value "0" "::osmium::io::Reader";
 }
 
-type ::std::result::Result<crate::Reader, ::std::string::String> {
+type ::std::result::Result<crate::Reader, String> {
     #layout(size = 24, align = 8);
 
     constructor Ok(crate::Reader);
@@ -74,7 +89,7 @@ type crate::Flags {
 }
 
 extern "C++" {
-    fn new_reader(crate::Flags) -> ::std::result::Result<crate::Reader, ::std::string::String>;
+    fn new_reader(crate::Flags) -> ::std::result::Result<crate::Reader, String>;
     
     impl crate::Reader {
         fn apply(&self, crate::BendHandler);
@@ -99,6 +114,6 @@ extern "C++" {
 
     impl crate::Node {
         fn distance(&self, &crate::Node) -> f64;
-        fn href(&self) -> ::std::string::String;
+        fn href(&self) -> String;
     }
 }

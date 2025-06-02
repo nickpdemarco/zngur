@@ -48,10 +48,17 @@ pub struct ZngurExternCppImpl {
     pub methods: Vec<ZngurMethod>,
 }
 
-#[derive(PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct ZngurConstructor {
     pub name: Option<String>,
     pub inputs: Vec<(String, RustType)>,
+}
+
+#[derive(Debug)]
+pub struct ZngurField {
+    pub name: String,
+    pub ty: RustType,
+    pub offset: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -82,35 +89,38 @@ pub enum LayoutPolicy {
     OnlyByRef,
 }
 
-#[derive(PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct ZngurMethodDetails {
     pub data: ZngurMethod,
     pub use_path: Option<Vec<String>>,
     pub deref: Option<RustType>,
 }
 
+#[derive(Debug)]
 pub struct ZngurType {
     pub ty: RustType,
     pub layout: LayoutPolicy,
     pub wellknown_traits: Vec<ZngurWellknownTrait>,
     pub methods: Vec<ZngurMethodDetails>,
     pub constructors: Vec<ZngurConstructor>,
+    pub fields: Vec<ZngurField>,
     pub cpp_value: Option<(String, String)>,
     pub cpp_ref: Option<String>,
 }
 
+#[derive(Debug)]
 pub struct ZngurTrait {
     pub tr: RustTrait,
     pub methods: Vec<ZngurMethod>,
 }
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct AdditionalIncludes(pub String);
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct ConvertPanicToException(pub bool);
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct ZngurFile {
     pub types: HashMap<RustType, ZngurType>,
     pub traits: HashMap<RustTrait, ZngurTrait>,

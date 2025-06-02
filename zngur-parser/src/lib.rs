@@ -7,8 +7,8 @@ use itertools::{Either, Itertools};
 use zngur_def::{
     AdditionalIncludes, ConvertPanicToException, LayoutPolicy, Merge, MergeFailure, Mutability,
     PrimitiveRustType, RustPathAndGenerics, RustTrait, RustType, ZngurConstructor,
-    ZngurExternCppFn, ZngurExternCppImpl, ZngurFile, ZngurFn, ZngurMethod, ZngurMethodDetails,
-    ZngurMethodReceiver, ZngurTrait, ZngurType, ZngurWellknownTrait,
+    ZngurExternCppFn, ZngurExternCppImpl, ZngurField, ZngurFile, ZngurFn, ZngurMethod,
+    ZngurMethodDetails, ZngurMethodReceiver, ZngurTrait, ZngurType, ZngurWellknownTrait,
 };
 
 pub type Span = SimpleSpan<usize>;
@@ -35,6 +35,12 @@ type ParserInput<'a> = chumsky::input::MappedInput<
 
 #[derive(Debug)]
 pub struct ParsedZngFile<'a>(Vec<ParsedItem<'a>>);
+
+#[derive(Debug)]
+pub struct ProcessedZngFile<'a> {
+    aliases: Vec<ParsedAlias<'a>>,
+    items: Vec<ProcessedItem<'a>>,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum ParsedPathStart {
@@ -67,6 +73,58 @@ impl ParsedPath<'_> {
                 .collect(),
         }
     }
+
+    fn matches_alias(&self, alias: &ParsedAlias<'_>) -> bool {
+        match self.start {
+            ParsedPathStart::Absolute | ParsedPathStart::Crate => false,
+            ParsedPathStart::Relative => self
+                .segments
+                .first()
+                .is_some_and(|part| *part == alias.name),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ParsedAlias<'a> {
+    name: &'a str,
+    path: ParsedPath<'a>,
+    span: Span,
+}
+
+impl ParsedAlias<'_> {
+    fn expand(&self, path: &ParsedPath<'_>, base: &[String]) -> Option<Vec<String>> {
+        if path.matches_alias(self) {
+            match self.path.start {
+                ParsedPathStart::Absolute => Some(
+                    self.path
+                        .segments
+                        .iter()
+                        .chain(path.segments.iter().skip(1))
+                        .map(|seg| (*seg).to_owned())
+                        .collect(),
+                ),
+                ParsedPathStart::Crate => Some(
+                    ["crate"]
+                        .into_iter()
+                        .chain(self.path.segments.iter().cloned())
+                        .chain(path.segments.iter().skip(1).cloned())
+                        .map(|seg| (*seg).to_owned())
+                        .collect(),
+                ),
+                ParsedPathStart::Relative => Some(
+                    base.iter()
+                        .map(|x| x.as_str())
+                        .chain(self.path.segments.iter().cloned())
+                        .chain(path.segments.iter().skip(1).cloned())
+                        .map(|seg| (*seg).to_owned())
+                        .collect(),
+                ),
+            }
+        } else {
+            None
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -76,6 +134,28 @@ enum ParsedItem<'a> {
     Mod {
         path: ParsedPath<'a>,
         items: Vec<ParsedItem<'a>>,
+    },
+    Type {
+        ty: Spanned<ParsedRustType<'a>>,
+        items: Vec<Spanned<ParsedTypeItem<'a>>>,
+    },
+    Trait {
+        tr: Spanned<ParsedRustTrait<'a>>,
+        methods: Vec<ParsedMethod<'a>>,
+    },
+    Fn(Spanned<ParsedMethod<'a>>),
+    ExternCpp(Vec<ParsedExternCppItem<'a>>),
+    Alias(ParsedAlias<'a>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ProcessedItem<'a> {
+    ConvertPanicToException,
+    CppAdditionalInclude(&'a str),
+    Mod {
+        path: ParsedPath<'a>,
+        items: Vec<ProcessedItem<'a>>,
+        aliases: Vec<ParsedAlias<'a>>,
     },
     Type {
         ty: Spanned<ParsedRustType<'a>>,
@@ -121,6 +201,11 @@ enum ParsedTypeItem<'a> {
         name: Option<&'a str>,
         args: ParsedConstructorArgs<'a>,
     },
+    Field {
+        name: String,
+        ty: ParsedRustType<'a>,
+        offset: usize,
+    },
     Method {
         data: ParsedMethod<'a>,
         use_path: Option<ParsedPath<'a>>,
@@ -145,17 +230,21 @@ struct ParsedMethod<'a> {
 }
 
 impl ParsedMethod<'_> {
-    fn to_zngur(self, base: &[String]) -> ZngurMethod {
+    fn to_zngur(self, aliases: &[ParsedAlias<'_>], base: &[String]) -> ZngurMethod {
         ZngurMethod {
             name: self.name.to_owned(),
             generics: self
                 .generics
                 .into_iter()
-                .map(|x| x.to_zngur(base))
+                .map(|x| x.to_zngur(aliases, base))
                 .collect(),
             receiver: self.receiver,
-            inputs: self.inputs.into_iter().map(|x| x.to_zngur(base)).collect(),
-            output: self.output.to_zngur(base),
+            inputs: self
+                .inputs
+                .into_iter()
+                .map(|x| x.to_zngur(aliases, base))
+                .collect(),
+            output: self.output.to_zngur(aliases, base),
         }
     }
 }
@@ -174,16 +263,21 @@ where
     }
 }
 
-impl ParsedItem<'_> {
-    fn add_to_zngur_file(self, r: &mut ZngurFile, base: &[String]) {
+impl ProcessedItem<'_> {
+    fn add_to_zngur_file(self, r: &mut ZngurFile, aliases: &[ParsedAlias], base: &[String]) {
         match self {
-            ParsedItem::Mod { path, items } => {
+            ProcessedItem::Mod {
+                path,
+                items,
+                aliases: mut mod_aliases,
+            } => {
                 let base = path.to_zngur(base);
+                mod_aliases.extend_from_slice(aliases);
                 for item in items {
-                    item.add_to_zngur_file(r, &base);
+                    item.add_to_zngur_file(r, &mod_aliases, &base);
                 }
             }
-            ParsedItem::Type { ty, items } => {
+            ProcessedItem::Type { ty, items } => {
                 if ty.inner == ParsedRustType::Tuple(vec![]) {
                     // We add unit type implicitly.
                     create_and_emit_error(
@@ -194,6 +288,7 @@ impl ParsedItem<'_> {
 
                 let mut methods = vec![];
                 let mut constructors = vec![];
+                let mut fields = vec![];
                 let mut wellknown_traits = vec![];
                 let mut layout = None;
                 let mut layout_span = None;
@@ -252,14 +347,21 @@ impl ParsedItem<'_> {
                                     ParsedConstructorArgs::Tuple(t) => t
                                         .into_iter()
                                         .enumerate()
-                                        .map(|(i, t)| (i.to_string(), t.to_zngur(base)))
+                                        .map(|(i, t)| (i.to_string(), t.to_zngur(aliases, base)))
                                         .collect(),
                                     ParsedConstructorArgs::Named(t) => t
                                         .into_iter()
-                                        .map(|(i, t)| (i.to_owned(), t.to_zngur(base)))
+                                        .map(|(i, t)| (i.to_owned(), t.to_zngur(aliases, base)))
                                         .collect(),
                                 },
                             })
+                        }
+                        ParsedTypeItem::Field { name, ty, offset } => {
+                            fields.push(ZngurField {
+                                name: name.to_owned(),
+                                ty: ty.to_zngur(aliases, base),
+                                offset,
+                            });
                         }
                         ParsedTypeItem::Method {
                             data,
@@ -267,9 +369,17 @@ impl ParsedItem<'_> {
                             deref,
                         } => {
                             methods.push(ZngurMethodDetails {
-                                data: data.to_zngur(base),
-                                use_path: use_path.map(|x| x.to_zngur(base)),
-                                deref: deref.map(|x| x.to_zngur(base)),
+                                data: data.to_zngur(aliases, base),
+                                use_path: use_path.map(|x| {
+                                    aliases
+                                        .iter()
+                                        .filter_map(|alias| alias.expand(&x, base))
+                                        .collect::<Vec<_>>()
+                                        .first()
+                                        .cloned()
+                                        .unwrap_or_else(|| x.to_zngur(base))
+                                }),
+                                deref: deref.map(|x| x.to_zngur(aliases, base)),
                             });
                         }
                         ParsedTypeItem::CppValue { field, cpp_type } => {
@@ -340,7 +450,7 @@ Use one of `#layout(size = X, align = Y)`, `#heap_allocated` or `#only_by_ref`."
                     );
                 };
                 let span = ty.span;
-                let ty = ty.inner.to_zngur(base);
+                let ty = ty.inner.to_zngur(aliases, base);
                 checked_merge(
                     ZngurType {
                         ty,
@@ -348,6 +458,7 @@ Use one of `#layout(size = X, align = Y)`, `#heap_allocated` or `#only_by_ref`."
                         methods,
                         wellknown_traits: wt,
                         constructors,
+                        fields,
                         cpp_value,
                         cpp_ref,
                     },
@@ -355,20 +466,23 @@ Use one of `#layout(size = X, align = Y)`, `#heap_allocated` or `#only_by_ref`."
                     span,
                 );
             }
-            ParsedItem::Trait { tr, methods } => {
+            ProcessedItem::Trait { tr, methods } => {
                 let span = tr.span;
                 checked_merge(
                     ZngurTrait {
-                        tr: tr.inner.to_zngur(base),
-                        methods: methods.into_iter().map(|m| m.to_zngur(base)).collect(),
+                        tr: tr.inner.to_zngur(aliases, base),
+                        methods: methods
+                            .into_iter()
+                            .map(|m| m.to_zngur(aliases, base))
+                            .collect(),
                     },
                     r,
                     span,
                 );
             }
-            ParsedItem::Fn(f) => {
+            ProcessedItem::Fn(f) => {
                 let span = f.span;
-                let method = f.inner.to_zngur(base);
+                let method = f.inner.to_zngur(aliases, base);
                 checked_merge(
                     ZngurFn {
                         path: RustPathAndGenerics {
@@ -383,12 +497,12 @@ Use one of `#layout(size = X, align = Y)`, `#heap_allocated` or `#only_by_ref`."
                     span,
                 );
             }
-            ParsedItem::ExternCpp(items) => {
+            ProcessedItem::ExternCpp(items) => {
                 for item in items {
                     match item {
                         ParsedExternCppItem::Function(method) => {
                             let span = method.span;
-                            let method = method.inner.to_zngur(base);
+                            let method = method.inner.to_zngur(aliases, base);
                             checked_merge(
                                 ZngurExternCppFn {
                                     name: method.name.to_string(),
@@ -403,11 +517,11 @@ Use one of `#layout(size = X, align = Y)`, `#heap_allocated` or `#only_by_ref`."
                             let span = ty.span;
                             checked_merge(
                                 ZngurExternCppImpl {
-                                    tr: tr.map(|x| x.to_zngur(base)),
-                                    ty: ty.inner.to_zngur(base),
+                                    tr: tr.map(|x| x.to_zngur(aliases, base)),
+                                    ty: ty.inner.to_zngur(aliases, base),
                                     methods: methods
                                         .into_iter()
-                                        .map(|x| x.to_zngur(base))
+                                        .map(|x| x.to_zngur(aliases, base))
                                         .collect(),
                                 },
                                 r,
@@ -417,7 +531,7 @@ Use one of `#layout(size = X, align = Y)`, `#heap_allocated` or `#only_by_ref`."
                     }
                 }
             }
-            ParsedItem::CppAdditionalInclude(s) => {
+            ProcessedItem::CppAdditionalInclude(s) => {
                 match AdditionalIncludes(s.to_owned()).merge(r) {
                     Ok(()) => {}
                     Err(_) => {
@@ -425,7 +539,7 @@ Use one of `#layout(size = X, align = Y)`, `#heap_allocated` or `#only_by_ref`."
                     }
                 }
             }
-            ParsedItem::ConvertPanicToException => {
+            ProcessedItem::ConvertPanicToException => {
                 match ConvertPanicToException(true).merge(r) {
                     Ok(()) => {}
                     Err(_) => {
@@ -450,21 +564,21 @@ enum ParsedRustType<'a> {
 }
 
 impl ParsedRustType<'_> {
-    fn to_zngur(self, base: &[String]) -> RustType {
+    fn to_zngur(self, aliases: &[ParsedAlias<'_>], base: &[String]) -> RustType {
         match self {
             ParsedRustType::Primitive(s) => RustType::Primitive(s),
-            ParsedRustType::Ref(m, s) => RustType::Ref(m, Box::new(s.to_zngur(base))),
-            ParsedRustType::Raw(m, s) => RustType::Raw(m, Box::new(s.to_zngur(base))),
-            ParsedRustType::Boxed(s) => RustType::Boxed(Box::new(s.to_zngur(base))),
-            ParsedRustType::Slice(s) => RustType::Slice(Box::new(s.to_zngur(base))),
+            ParsedRustType::Ref(m, s) => RustType::Ref(m, Box::new(s.to_zngur(aliases, base))),
+            ParsedRustType::Raw(m, s) => RustType::Raw(m, Box::new(s.to_zngur(aliases, base))),
+            ParsedRustType::Boxed(s) => RustType::Boxed(Box::new(s.to_zngur(aliases, base))),
+            ParsedRustType::Slice(s) => RustType::Slice(Box::new(s.to_zngur(aliases, base))),
             ParsedRustType::Dyn(tr, bounds) => RustType::Dyn(
-                tr.to_zngur(base),
+                tr.to_zngur(aliases, base),
                 bounds.into_iter().map(|x| x.to_owned()).collect(),
             ),
             ParsedRustType::Tuple(v) => {
-                RustType::Tuple(v.into_iter().map(|s| s.to_zngur(base)).collect())
+                RustType::Tuple(v.into_iter().map(|s| s.to_zngur(aliases, base)).collect())
             }
-            ParsedRustType::Adt(s) => RustType::Adt(s.to_zngur(base)),
+            ParsedRustType::Adt(s) => RustType::Adt(s.to_zngur(aliases, base)),
         }
     }
 }
@@ -480,17 +594,20 @@ enum ParsedRustTrait<'a> {
 }
 
 impl ParsedRustTrait<'_> {
-    fn to_zngur(self, base: &[String]) -> RustTrait {
+    fn to_zngur(self, aliases: &[ParsedAlias<'_>], base: &[String]) -> RustTrait {
         match self {
-            ParsedRustTrait::Normal(s) => RustTrait::Normal(s.to_zngur(base)),
+            ParsedRustTrait::Normal(s) => RustTrait::Normal(s.to_zngur(aliases, base)),
             ParsedRustTrait::Fn {
                 name,
                 inputs,
                 output,
             } => RustTrait::Fn {
                 name: name.to_owned(),
-                inputs: inputs.into_iter().map(|s| s.to_zngur(base)).collect(),
-                output: Box::new(output.to_zngur(base)),
+                inputs: inputs
+                    .into_iter()
+                    .map(|s| s.to_zngur(aliases, base))
+                    .collect(),
+                output: Box::new(output.to_zngur(aliases, base)),
             },
         }
     }
@@ -504,18 +621,24 @@ struct ParsedRustPathAndGenerics<'a> {
 }
 
 impl ParsedRustPathAndGenerics<'_> {
-    fn to_zngur(self, base: &[String]) -> RustPathAndGenerics {
+    fn to_zngur(self, aliases: &[ParsedAlias<'_>], base: &[String]) -> RustPathAndGenerics {
         RustPathAndGenerics {
-            path: self.path.to_zngur(base),
+            path: aliases
+                .iter()
+                .filter_map(|alias| alias.expand(&self.path, base))
+                .collect::<Vec<_>>()
+                .first()
+                .cloned()
+                .unwrap_or_else(|| self.path.to_zngur(base)),
             generics: self
                 .generics
                 .into_iter()
-                .map(|x| x.to_zngur(base))
+                .map(|x| x.to_zngur(aliases, base))
                 .collect(),
             named_generics: self
                 .named_generics
                 .into_iter()
-                .map(|(name, x)| (name.to_owned(), x.to_zngur(base)))
+                .map(|(name, x)| (name.to_owned(), x.to_zngur(aliases, base)))
                 .collect(),
         }
     }
@@ -524,7 +647,7 @@ impl ParsedRustPathAndGenerics<'_> {
 static LATEST_FILENAME: Mutex<String> = Mutex::new(String::new());
 static LATEST_TEXT: Mutex<String> = Mutex::new(String::new());
 
-impl ParsedZngFile<'_> {
+impl<'a> ParsedZngFile<'a> {
     pub fn parse_into(zngur: &mut ZngurFile, filename: &str, text: &str) {
         *LATEST_FILENAME.lock().unwrap() = filename.to_string();
         *LATEST_TEXT.lock().unwrap() = text.to_string();
@@ -545,9 +668,8 @@ impl ParsedZngFile<'_> {
             emit_error(errs);
         };
 
-        for item in ast.0.0 {
-            item.add_to_zngur_file(zngur, &[]);
-        }
+        let (aliases, items) = ast.0.0.into_iter().partition_map(partition_parsed_item_vec);
+        ProcessedZngFile::new(aliases, items).into_zngur_file(zngur)
     }
 
     pub fn parse(filename: &str, text: &str) -> ZngurFile {
@@ -557,7 +679,44 @@ impl ParsedZngFile<'_> {
     }
 }
 
-fn create_and_emit_error<'a>(error: &str, span: Span) -> ! {
+fn partition_parsed_item_vec(item: ParsedItem<'_>) -> Either<ParsedAlias<'_>, ProcessedItem<'_>> {
+    match item {
+        ParsedItem::Alias(alias) => Either::Left(alias),
+        ParsedItem::ConvertPanicToException => {
+            Either::Right(ProcessedItem::ConvertPanicToException)
+        }
+        ParsedItem::CppAdditionalInclude(inc) => {
+            Either::Right(ProcessedItem::CppAdditionalInclude(inc))
+        }
+        ParsedItem::Mod { path, items } => {
+            let (aliases, items): (Vec<ParsedAlias<'_>>, Vec<ProcessedItem<'_>>) =
+                items.into_iter().partition_map(partition_parsed_item_vec);
+            Either::Right(ProcessedItem::Mod {
+                path,
+                items,
+                aliases,
+            })
+        }
+        ParsedItem::Type { ty, items } => Either::Right(ProcessedItem::Type { ty, items }),
+        ParsedItem::Trait { tr, methods } => Either::Right(ProcessedItem::Trait { tr, methods }),
+        ParsedItem::Fn(method) => Either::Right(ProcessedItem::Fn(method)),
+        ParsedItem::ExternCpp(items) => Either::Right(ProcessedItem::ExternCpp(items)),
+    }
+}
+
+impl<'a> ProcessedZngFile<'a> {
+    fn new(aliases: Vec<ParsedAlias<'a>>, items: Vec<ProcessedItem<'a>>) -> Self {
+        ProcessedZngFile { aliases, items }
+    }
+
+    pub fn into_zngur_file(self, zngur: &mut ZngurFile) {
+        for item in self.items {
+            item.add_to_zngur_file(zngur, &self.aliases, &[]);
+        }
+    }
+}
+
+fn create_and_emit_error(error: &str, span: Span) -> ! {
     emit_error([Rich::custom(span, error)].into_iter())
 }
 
@@ -629,6 +788,7 @@ enum Token<'a> {
     Question,
     Comma,
     Semicolon,
+    KwAs,
     KwDyn,
     KwUse,
     KwFor,
@@ -649,6 +809,7 @@ enum Token<'a> {
 impl<'a> Token<'a> {
     fn ident_or_kw(ident: &'a str) -> Self {
         match ident {
+            "as" => Token::KwAs,
             "dyn" => Token::KwDyn,
             "mod" => Token::KwMod,
             "type" => Token::KwType,
@@ -688,6 +849,7 @@ impl Display for Token<'_> {
             Token::Question => write!(f, "?"),
             Token::Comma => write!(f, ","),
             Token::Semicolon => write!(f, ";"),
+            Token::KwAs => write!(f, "as"),
             Token::KwDyn => write!(f, "dyn"),
             Token::KwUse => write!(f, "use"),
             Token::KwFor => write!(f, "for"),
@@ -748,6 +910,25 @@ fn lexer<'src>()
         .padded()
         .repeated()
         .collect()
+}
+
+fn alias<'a>()
+-> impl Parser<'a, ParserInput<'a>, ParsedItem<'a>, extra::Err<Rich<'a, Token<'a>, Span>>> + Clone {
+    just(Token::KwUse)
+        .ignore_then(path())
+        .then_ignore(just(Token::KwAs))
+        .then(select! {
+            Token::Ident(c) => c,
+        })
+        .then_ignore(just(Token::Semicolon))
+        .map_with(|(path, name), extra| {
+            ParsedItem::Alias(ParsedAlias {
+                name,
+                path,
+                span: extra.span(),
+            })
+        })
+        .boxed()
 }
 
 fn file_parser<'a>()
@@ -1059,6 +1240,27 @@ fn type_item<'a>()
             .then(constructor_args)
             .map(|(name, args)| ParsedTypeItem::Constructor { name, args }),
         );
+        let field = just(Token::Ident("field")).ignore_then(
+            (select! {
+                Token::Ident(c) => c.to_owned(),
+                Token::Number(c) => c.to_string(),
+            })
+            .then(
+                just(Token::Ident("offset"))
+                    .then(just(Token::Eq))
+                    .ignore_then(select! {
+                        Token::Number(c) => c,
+                    })
+                    .then(
+                        just(Token::Comma)
+                            .then(just(Token::KwType))
+                            .then(just(Token::Eq))
+                            .ignore_then(rust_type()),
+                    )
+                    .delimited_by(just(Token::ParenOpen), just(Token::ParenClose)),
+            )
+            .map(|(name, (offset, ty))| ParsedTypeItem::Field { name, ty, offset }),
+        );
         let cpp_value = just(Token::Sharp)
             .then(just(Token::Ident("cpp_value")))
             .ignore_then(select! {
@@ -1081,6 +1283,7 @@ fn type_item<'a>()
             layout,
             traits,
             constructor,
+            field,
             cpp_value,
             cpp_ref,
             method()
@@ -1204,6 +1407,7 @@ fn item<'a>()
             extern_cpp_item(),
             fn_item(),
             additional_include_item(),
+            alias(),
         ))
     })
     .boxed()
