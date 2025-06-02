@@ -2,6 +2,9 @@ use std::{collections::HashMap, fmt::Display};
 
 use itertools::Itertools;
 
+mod merge;
+pub use merge::{Merge, MergeFailure, MergeResult};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Mutability {
     Mut,
@@ -45,6 +48,7 @@ pub struct ZngurExternCppImpl {
     pub methods: Vec<ZngurMethod>,
 }
 
+#[derive(PartialEq, Eq)]
 pub struct ZngurConstructor {
     pub name: Option<String>,
     pub inputs: Vec<(String, RustType)>,
@@ -78,6 +82,7 @@ pub enum LayoutPolicy {
     OnlyByRef,
 }
 
+#[derive(PartialEq, Eq)]
 pub struct ZngurMethodDetails {
     pub data: ZngurMethod,
     pub use_path: Option<Vec<String>>,
@@ -100,14 +105,20 @@ pub struct ZngurTrait {
 }
 
 #[derive(Default)]
+pub struct AdditionalIncludes(pub String);
+
+#[derive(Default)]
+pub struct ConvertPanicToException(pub bool);
+
+#[derive(Default)]
 pub struct ZngurFile {
     pub types: HashMap<RustType, ZngurType>,
     pub traits: HashMap<RustTrait, ZngurTrait>,
     pub funcs: Vec<ZngurFn>,
     pub extern_cpp_funcs: Vec<ZngurExternCppFn>,
     pub extern_cpp_impls: Vec<ZngurExternCppImpl>,
-    pub additional_includes: String,
-    pub convert_panic_to_exception: bool,
+    pub additional_includes: AdditionalIncludes,
+    pub convert_panic_to_exception: ConvertPanicToException,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

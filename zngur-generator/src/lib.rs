@@ -46,14 +46,14 @@ impl ZngurGenerator {
             },
         );
         let mut cpp_file = CppFile::default();
-        cpp_file.additional_includes = zng.additional_includes;
+        cpp_file.additional_includes = zng.additional_includes.0;
         let mut rust_file = RustFile::default();
         cpp_file.trait_defs = zng
             .traits
             .iter()
             .map(|(key, value)| (key.clone(), rust_file.add_builder_for_dyn_trait(value)))
             .collect();
-        if zng.convert_panic_to_exception {
+        if zng.convert_panic_to_exception.0 {
             rust_file.enable_panic_to_exception();
             cpp_file.panic_to_exception = true;
         }

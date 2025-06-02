@@ -5,9 +5,10 @@ use chumsky::prelude::*;
 use itertools::{Either, Itertools};
 
 use zngur_def::{
-    LayoutPolicy, Mutability, PrimitiveRustType, RustPathAndGenerics, RustTrait, RustType,
-    ZngurConstructor, ZngurExternCppFn, ZngurExternCppImpl, ZngurFile, ZngurFn, ZngurMethod,
-    ZngurMethodDetails, ZngurMethodReceiver, ZngurTrait, ZngurType, ZngurWellknownTrait,
+    AdditionalIncludes, ConvertPanicToException, LayoutPolicy, Merge, MergeFailure, Mutability,
+    PrimitiveRustType, RustPathAndGenerics, RustTrait, RustType, ZngurConstructor,
+    ZngurExternCppFn, ZngurExternCppImpl, ZngurFile, ZngurFn, ZngurMethod, ZngurMethodDetails,
+    ZngurMethodReceiver, ZngurTrait, ZngurType, ZngurWellknownTrait,
 };
 
 pub type Span = SimpleSpan<usize>;
@@ -81,19 +82,19 @@ enum ParsedItem<'a> {
         items: Vec<Spanned<ParsedTypeItem<'a>>>,
     },
     Trait {
-        tr: ParsedRustTrait<'a>,
+        tr: Spanned<ParsedRustTrait<'a>>,
         methods: Vec<ParsedMethod<'a>>,
     },
-    Fn(ParsedMethod<'a>),
+    Fn(Spanned<ParsedMethod<'a>>),
     ExternCpp(Vec<ParsedExternCppItem<'a>>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum ParsedExternCppItem<'a> {
-    Function(ParsedMethod<'a>),
+    Function(Spanned<ParsedMethod<'a>>),
     Impl {
         tr: Option<ParsedRustTrait<'a>>,
-        ty: ParsedRustType<'a>,
+        ty: Spanned<ParsedRustType<'a>>,
         methods: Vec<ParsedMethod<'a>>,
     },
 }
@@ -156,6 +157,20 @@ impl ParsedMethod<'_> {
             inputs: self.inputs.into_iter().map(|x| x.to_zngur(base)).collect(),
             output: self.output.to_zngur(base),
         }
+    }
+}
+
+fn checked_merge<T, U>(src: T, dst: &mut U, span: Span)
+where
+    T: Merge<U>,
+{
+    match src.merge(dst) {
+        Ok(()) => {}
+        Err(e) => match e {
+            MergeFailure::Conflict(s) => {
+                create_and_emit_error(&s, span);
+            }
+        },
     }
 }
 
@@ -324,9 +339,9 @@ Use one of `#layout(size = X, align = Y)`, `#heap_allocated` or `#only_by_ref`."
                         ty.span,
                     );
                 };
+                let span = ty.span;
                 let ty = ty.inner.to_zngur(base);
-                r.types.insert(
-                    ty.clone(),
+                checked_merge(
                     ZngurType {
                         ty,
                         layout,
@@ -336,56 +351,87 @@ Use one of `#layout(size = X, align = Y)`, `#heap_allocated` or `#only_by_ref`."
                         cpp_value,
                         cpp_ref,
                     },
+                    r,
+                    span,
                 );
             }
             ParsedItem::Trait { tr, methods } => {
-                let tr = tr.to_zngur(base);
-                r.traits.insert(
-                    tr.clone(),
+                let span = tr.span;
+                checked_merge(
                     ZngurTrait {
-                        tr,
+                        tr: tr.inner.to_zngur(base),
                         methods: methods.into_iter().map(|m| m.to_zngur(base)).collect(),
                     },
+                    r,
+                    span,
                 );
             }
             ParsedItem::Fn(f) => {
-                let method = f.to_zngur(base);
-                r.funcs.push(ZngurFn {
-                    path: RustPathAndGenerics {
-                        path: base.iter().chain(Some(&method.name)).cloned().collect(),
-                        generics: method.generics,
-                        named_generics: vec![],
+                let span = f.span;
+                let method = f.inner.to_zngur(base);
+                checked_merge(
+                    ZngurFn {
+                        path: RustPathAndGenerics {
+                            path: base.iter().chain(Some(&method.name)).cloned().collect(),
+                            generics: method.generics,
+                            named_generics: vec![],
+                        },
+                        inputs: method.inputs,
+                        output: method.output,
                     },
-                    inputs: method.inputs,
-                    output: method.output,
-                })
+                    r,
+                    span,
+                );
             }
             ParsedItem::ExternCpp(items) => {
                 for item in items {
                     match item {
                         ParsedExternCppItem::Function(method) => {
-                            let method = method.to_zngur(base);
-                            r.extern_cpp_funcs.push(ZngurExternCppFn {
-                                name: method.name.to_string(),
-                                inputs: method.inputs,
-                                output: method.output,
-                            });
+                            let span = method.span;
+                            let method = method.inner.to_zngur(base);
+                            checked_merge(
+                                ZngurExternCppFn {
+                                    name: method.name.to_string(),
+                                    inputs: method.inputs,
+                                    output: method.output,
+                                },
+                                r,
+                                span,
+                            );
                         }
                         ParsedExternCppItem::Impl { tr, ty, methods } => {
-                            r.extern_cpp_impls.push(ZngurExternCppImpl {
-                                tr: tr.map(|x| x.to_zngur(base)),
-                                ty: ty.to_zngur(base),
-                                methods: methods.into_iter().map(|x| x.to_zngur(base)).collect(),
-                            });
+                            let span = ty.span;
+                            checked_merge(
+                                ZngurExternCppImpl {
+                                    tr: tr.map(|x| x.to_zngur(base)),
+                                    ty: ty.inner.to_zngur(base),
+                                    methods: methods
+                                        .into_iter()
+                                        .map(|x| x.to_zngur(base))
+                                        .collect(),
+                                },
+                                r,
+                                span,
+                            );
                         }
                     }
                 }
             }
             ParsedItem::CppAdditionalInclude(s) => {
-                r.additional_includes += s;
+                match AdditionalIncludes(s.to_owned()).merge(r) {
+                    Ok(()) => {}
+                    Err(_) => {
+                        unreachable!() // For now, additional includes can't have conflicts.
+                    }
+                }
             }
             ParsedItem::ConvertPanicToException => {
-                r.convert_panic_to_exception = true;
+                match ConvertPanicToException(true).merge(r) {
+                    Ok(()) => {}
+                    Err(_) => {
+                        unreachable!() // For now, this also can't have conflicts.
+                    }
+                }
             }
         }
     }
@@ -1072,7 +1118,7 @@ fn type_item<'a>()
 fn trait_item<'a>()
 -> impl Parser<'a, ParserInput<'a>, ParsedItem<'a>, extra::Err<Rich<'a, Token<'a>, Span>>> + Clone {
     just(Token::KwTrait)
-        .ignore_then(rust_trait(rust_type()))
+        .ignore_then(spanned(rust_trait(rust_type())))
         .then(
             method()
                 .then_ignore(just(Token::Semicolon))
@@ -1086,7 +1132,7 @@ fn trait_item<'a>()
 
 fn fn_item<'a>()
 -> impl Parser<'a, ParserInput<'a>, ParsedItem<'a>, extra::Err<Rich<'a, Token<'a>, Span>>> + Clone {
-    method()
+    spanned(method())
         .then_ignore(just(Token::Semicolon))
         .map(ParsedItem::Fn)
 }
@@ -1107,7 +1153,7 @@ fn additional_include_item<'a>()
 
 fn extern_cpp_item<'a>()
 -> impl Parser<'a, ParserInput<'a>, ParsedItem<'a>, extra::Err<Rich<'a, Token<'a>, Span>>> + Clone {
-    let function = method()
+    let function = spanned(method())
         .then_ignore(just(Token::Semicolon))
         .map(ParsedExternCppItem::Function);
     let impl_block = just(Token::KwImpl)
@@ -1116,7 +1162,7 @@ fn extern_cpp_item<'a>()
                 .then_ignore(just(Token::KwFor))
                 .map(Some)
                 .or(empty().to(None))
-                .then(rust_type()),
+                .then(spanned(rust_type())),
         )
         .then(
             method()
