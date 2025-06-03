@@ -22,10 +22,10 @@ pub use zngur_parser::ParsedZngFile;
 
 pub use zngur_def::*;
 
-pub struct ZngurGenerator(ZngurFile);
+pub struct ZngurGenerator(ZngurSpec);
 
 impl ZngurGenerator {
-    pub fn build_from_zng(zng: ZngurFile) -> Self {
+    pub fn build_from_zng(zng: ZngurSpec) -> Self {
         ZngurGenerator(zng)
     }
 

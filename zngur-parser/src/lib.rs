@@ -5,10 +5,10 @@ use chumsky::prelude::*;
 use itertools::{Either, Itertools};
 
 use zngur_def::{
-    AdditionalIncludes, ConvertPanicToException, LayoutPolicy, Merge, MergeFailure, Mutability,
-    PrimitiveRustType, RustPathAndGenerics, RustTrait, RustType, ZngurConstructor,
-    ZngurExternCppFn, ZngurExternCppImpl, ZngurField, ZngurFile, ZngurFn, ZngurMethod,
-    ZngurMethodDetails, ZngurMethodReceiver, ZngurTrait, ZngurType, ZngurWellknownTrait,
+    AdditionalIncludes, ConvertPanicToException, Import, LayoutPolicy, Merge, MergeFailure,
+    Mutability, PrimitiveRustType, RustPathAndGenerics, RustTrait, RustType, ZngurConstructor,
+    ZngurExternCppFn, ZngurExternCppImpl, ZngurField, ZngurFn, ZngurMethod, ZngurMethodDetails,
+    ZngurMethodReceiver, ZngurSpec, ZngurTrait, ZngurType, ZngurWellknownTrait,
 };
 
 pub type Span = SimpleSpan<usize>;
@@ -128,6 +128,12 @@ impl ParsedAlias<'_> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+struct ParsedImportPath {
+    path: std::path::PathBuf,
+    span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum ParsedItem<'a> {
     ConvertPanicToException,
     CppAdditionalInclude(&'a str),
@@ -146,6 +152,7 @@ enum ParsedItem<'a> {
     Fn(Spanned<ParsedMethod<'a>>),
     ExternCpp(Vec<ParsedExternCppItem<'a>>),
     Alias(ParsedAlias<'a>),
+    Import(ParsedImportPath),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -167,6 +174,7 @@ enum ProcessedItem<'a> {
     },
     Fn(Spanned<ParsedMethod<'a>>),
     ExternCpp(Vec<ParsedExternCppItem<'a>>),
+    Import(ParsedImportPath),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -264,7 +272,7 @@ where
 }
 
 impl ProcessedItem<'_> {
-    fn add_to_zngur_file(self, r: &mut ZngurFile, aliases: &[ParsedAlias], base: &[String]) {
+    fn add_to_zngur_spec(self, r: &mut ZngurSpec, aliases: &[ParsedAlias], base: &[String]) {
         match self {
             ProcessedItem::Mod {
                 path,
@@ -274,8 +282,11 @@ impl ProcessedItem<'_> {
                 let base = path.to_zngur(base);
                 mod_aliases.extend_from_slice(aliases);
                 for item in items {
-                    item.add_to_zngur_file(r, &mod_aliases, &base);
+                    item.add_to_zngur_spec(r, &mod_aliases, &base);
                 }
+            }
+            ProcessedItem::Import(path) => {
+                r.imports.push(Import(path.path));
             }
             ProcessedItem::Type { ty, items } => {
                 if ty.inner == ParsedRustType::Tuple(vec![]) {
@@ -648,10 +659,13 @@ static LATEST_FILENAME: Mutex<String> = Mutex::new(String::new());
 static LATEST_TEXT: Mutex<String> = Mutex::new(String::new());
 
 impl<'a> ParsedZngFile<'a> {
-    pub fn parse_into(zngur: &mut ZngurFile, filename: &str, text: &str) {
+    pub fn parse_into(zngur: &mut ZngurSpec, path: std::path::PathBuf) {
+        let filename = &path.file_name().unwrap().to_str().unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
         *LATEST_FILENAME.lock().unwrap() = filename.to_string();
         *LATEST_TEXT.lock().unwrap() = text.to_string();
-        let (tokens, errs) = lexer().parse(text).into_output_errors();
+
+        let (tokens, errs) = lexer().parse(&text).into_output_errors();
         let Some(tokens) = tokens else {
             let errs = errs.into_iter().map(|e| e.map_token(|c| c.to_string()));
             emit_error(errs);
@@ -669,12 +683,29 @@ impl<'a> ParsedZngFile<'a> {
         };
 
         let (aliases, items) = ast.0.0.into_iter().partition_map(partition_parsed_item_vec);
-        ProcessedZngFile::new(aliases, items).into_zngur_file(zngur)
+        ProcessedZngFile::new(aliases, items).into_zngur_spec(zngur);
+
+        let dirname = path.parent().unwrap();
+        eprintln!("dirname: {:?}", dirname);
+        for import in std::mem::take(&mut zngur.imports) {
+            match dirname.join(&import.0).canonicalize() {
+                Ok(path) => {
+                    eprintln!("path: {:?}", path);
+                    Self::parse_into(zngur, path);
+                }
+                Err(_) => {
+                    // TODO: emit a better error. How should we get a span here?
+                    // I'd like to avoid putting a ParsedImportPath in ZngurSpec, and
+                    // also not have to pass a filename to add_to_zngur_spec.
+                    eprintln!("Import path {:?} not found", import.0);
+                }
+            }
+        }
     }
 
-    pub fn parse(filename: &str, text: &str) -> ZngurFile {
-        let mut zngur = ZngurFile::default();
-        Self::parse_into(&mut zngur, filename, text);
+    pub fn parse(path: std::path::PathBuf) -> ZngurSpec {
+        let mut zngur = ZngurSpec::default();
+        Self::parse_into(&mut zngur, path);
         zngur
     }
 }
@@ -701,6 +732,7 @@ fn partition_parsed_item_vec(item: ParsedItem<'_>) -> Either<ParsedAlias<'_>, Pr
         ParsedItem::Trait { tr, methods } => Either::Right(ProcessedItem::Trait { tr, methods }),
         ParsedItem::Fn(method) => Either::Right(ProcessedItem::Fn(method)),
         ParsedItem::ExternCpp(items) => Either::Right(ProcessedItem::ExternCpp(items)),
+        ParsedItem::Import(path) => Either::Right(ProcessedItem::Import(path)),
     }
 }
 
@@ -709,9 +741,9 @@ impl<'a> ProcessedZngFile<'a> {
         ProcessedZngFile { aliases, items }
     }
 
-    pub fn into_zngur_file(self, zngur: &mut ZngurFile) {
+    pub fn into_zngur_spec(self, zngur: &mut ZngurSpec) {
         for item in self.items {
-            item.add_to_zngur_file(zngur, &self.aliases, &[]);
+            item.add_to_zngur_spec(zngur, &self.aliases, &[]);
         }
     }
 }
@@ -801,6 +833,7 @@ enum Token<'a> {
     KwConst,
     KwExtern,
     KwImpl,
+    KwImport,
     Ident(&'a str),
     Str(&'a str),
     Number(usize),
@@ -822,6 +855,7 @@ impl<'a> Token<'a> {
             "for" => Token::KwFor,
             "extern" => Token::KwExtern,
             "impl" => Token::KwImpl,
+            "import" => Token::KwImport,
             x => Token::Ident(x),
         }
     }
@@ -862,6 +896,7 @@ impl Display for Token<'_> {
             Token::KwConst => write!(f, "const"),
             Token::KwExtern => write!(f, "extern"),
             Token::KwImpl => write!(f, "impl"),
+            Token::KwImport => write!(f, "import"),
             Token::Ident(i) => write!(f, "{i}"),
             Token::Number(n) => write!(f, "{n}"),
             Token::Str(s) => write!(f, r#""{s}""#),
@@ -1407,10 +1442,27 @@ fn item<'a>()
             extern_cpp_item(),
             fn_item(),
             additional_include_item(),
+            import_item(),
             alias(),
         ))
     })
     .boxed()
+}
+
+fn import_item<'a>()
+-> impl Parser<'a, ParserInput<'a>, ParsedItem<'a>, extra::Err<Rich<'a, Token<'a>, Span>>> + Clone {
+    just(Token::KwImport)
+        .ignore_then(select! {
+            Token::Str(path) => path,
+        })
+        .then_ignore(just(Token::Semicolon))
+        .map_with(|path, extra| {
+            ParsedItem::Import(ParsedImportPath {
+                path: std::path::PathBuf::from(path),
+                span: extra.span(),
+            })
+        })
+        .boxed()
 }
 
 fn path<'a>()

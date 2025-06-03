@@ -87,31 +87,23 @@ impl Zngur {
         }
     }
 
-    pub fn generate(self) {
+    pub fn generate(mut self) {
         assert_eq!(
             self.zng_files.len(),
             1,
             "Exactly one zng file must be provided"
         );
-        let path = &self.zng_files[0];
-        let file = std::fs::read_to_string(path).unwrap();
-        let file = ZngurGenerator::build_from_zng(ParsedZngFile::parse(
-            path.file_name().unwrap().to_str().unwrap(),
-            &file,
-        ));
+        let file = ZngurGenerator::build_from_zng(ParsedZngFile::parse(std::mem::take(
+            &mut self.zng_files[0],
+        )));
 
         self.emit(file);
     }
 
-    pub fn generate_merged(self) {
-        let mut zngur = zngur_generator::ZngurFile::default();
-        for path in &self.zng_files {
-            let file = std::fs::read_to_string(&path).unwrap();
-            ParsedZngFile::parse_into(
-                &mut zngur,
-                path.file_name().unwrap().to_str().unwrap(),
-                &file,
-            );
+    pub fn generate_merged(mut self) {
+        let mut zngur = zngur_generator::ZngurSpec::default();
+        for path in std::mem::take(&mut self.zng_files) {
+            ParsedZngFile::parse_into(&mut zngur, path);
         }
         let file = ZngurGenerator::build_from_zng(zngur);
         self.emit(file);

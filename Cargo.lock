@@ -412,7 +412,7 @@ name = "example-simple"
 version = "0.6.0"
 
 [[package]]
-name = "example-simple-merged"
+name = "example-simple-import"
 version = "0.6.0"
 
 [[package]]

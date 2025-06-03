@@ -1,6 +1,6 @@
 use crate::{
-    AdditionalIncludes, ConvertPanicToException, ZngurExternCppFn, ZngurExternCppImpl, ZngurFile,
-    ZngurFn, ZngurTrait, ZngurType,
+    AdditionalIncludes, ConvertPanicToException, ZngurExternCppFn, ZngurExternCppImpl, ZngurFn,
+    ZngurSpec, ZngurTrait, ZngurType,
 };
 use std::vec::Vec;
 
@@ -88,48 +88,48 @@ impl Merge for ZngurTrait {
     }
 }
 
-impl Merge<ZngurFile> for ZngurType {
-    fn merge(self, into: &mut ZngurFile) -> MergeResult {
+impl Merge<ZngurSpec> for ZngurType {
+    fn merge(self, into: &mut ZngurSpec) -> MergeResult {
         [(self.ty.clone(), self)].merge(&mut into.types)
     }
 }
 
-impl Merge<ZngurFile> for ZngurTrait {
-    fn merge(self, into: &mut ZngurFile) -> MergeResult {
+impl Merge<ZngurSpec> for ZngurTrait {
+    fn merge(self, into: &mut ZngurSpec) -> MergeResult {
         [(self.tr.clone(), self)].merge(&mut into.traits)
     }
 }
 
-impl Merge<ZngurFile> for ZngurFn {
-    fn merge(self, into: &mut ZngurFile) -> MergeResult {
+impl Merge<ZngurSpec> for ZngurFn {
+    fn merge(self, into: &mut ZngurSpec) -> MergeResult {
         push_unique(self, &mut into.funcs);
         Ok(())
     }
 }
 
-impl Merge<ZngurFile> for ZngurExternCppFn {
-    fn merge(self, into: &mut ZngurFile) -> MergeResult {
+impl Merge<ZngurSpec> for ZngurExternCppFn {
+    fn merge(self, into: &mut ZngurSpec) -> MergeResult {
         push_unique(self, &mut into.extern_cpp_funcs);
         Ok(())
     }
 }
 
-impl Merge<ZngurFile> for ZngurExternCppImpl {
-    fn merge(self, into: &mut ZngurFile) -> MergeResult {
+impl Merge<ZngurSpec> for ZngurExternCppImpl {
+    fn merge(self, into: &mut ZngurSpec) -> MergeResult {
         push_unique(self, &mut into.extern_cpp_impls);
         Ok(())
     }
 }
 
-impl Merge<ZngurFile> for AdditionalIncludes {
-    fn merge(self, into: &mut ZngurFile) -> MergeResult {
+impl Merge<ZngurSpec> for AdditionalIncludes {
+    fn merge(self, into: &mut ZngurSpec) -> MergeResult {
         into.additional_includes.0 += self.0.as_str();
         Ok(())
     }
 }
 
-impl Merge<ZngurFile> for ConvertPanicToException {
-    fn merge(self, into: &mut ZngurFile) -> MergeResult {
+impl Merge<ZngurSpec> for ConvertPanicToException {
+    fn merge(self, into: &mut ZngurSpec) -> MergeResult {
         // REVISIT: Should we just set to true here?
         into.convert_panic_to_exception.0 |= self.0;
         Ok(())

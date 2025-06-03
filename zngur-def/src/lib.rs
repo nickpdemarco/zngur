@@ -120,8 +120,11 @@ pub struct AdditionalIncludes(pub String);
 #[derive(Debug, Default)]
 pub struct ConvertPanicToException(pub bool);
 
+#[derive(Clone, Debug, Default)]
+pub struct Import(pub std::path::PathBuf);
 #[derive(Debug, Default)]
-pub struct ZngurFile {
+pub struct ZngurSpec {
+    pub imports: Vec<Import>,
     pub types: HashMap<RustType, ZngurType>,
     pub traits: HashMap<RustTrait, ZngurTrait>,
     pub funcs: Vec<ZngurFn>,

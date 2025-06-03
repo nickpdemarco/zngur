@@ -165,3 +165,17 @@ mod crate {
     };
     assert_eq!(p.as_slice(), ["crate", "MyLocalString"]);
 }
+
+#[test]
+fn import_parser_test() {
+    // Test that import statements can be parsed successfully
+    check_success(
+        r#"
+import "./relative/path.zng";
+import "/absolute/path.zng";
+type Example {
+    #layout(size = 1, align = 1);
+}
+    "#,
+    );
+}

@@ -11,13 +11,8 @@ mod ::std {
 
         constructor None;
         constructor Some(i32);
-    }
 
-    type option::Option<&i32> {
-        #layout(size = 8, align = 8);
-        wellknown_traits(Copy);
-
-        fn unwrap(self) -> &i32;
+        fn unwrap(self) -> i32;
     }
 
     type iter::Map<::std::vec::IntoIter<i32>, Box<dyn Fn(i32) -> i32>> {
@@ -31,19 +26,8 @@ mod ::std {
             #layout(size = 32, align = 8);
 
             fn sum<i32>(self) -> i32;
+            fn map<i32, Box<dyn Fn(i32) -> i32>>(self, Box<dyn Fn(i32) -> i32>)
+                -> ::std::iter::Map<::std::vec::IntoIter<i32>, Box<dyn Fn(i32) -> i32>>;
         }
-
-        type Vec<i32> {
-            #layout(size = 24, align = 8);
-            wellknown_traits(Debug);
-
-            fn new() -> Vec<i32>;
-            fn push(&mut self, i32);
-            fn clone(&self) -> Vec<i32>;
-        }
-    }
-
-    trait iter::Iterator::<Item = i32> {
-        fn next(&mut self) -> ::std::option::Option<i32>;
     }
 }
