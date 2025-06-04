@@ -460,11 +460,9 @@ Use one of `#layout(size = X, align = Y)`, `#heap_allocated` or `#only_by_ref`."
                         ty.span,
                     );
                 };
-                let span = ty.span;
-                let ty = ty.inner.to_zngur(aliases, base);
                 checked_merge(
                     ZngurType {
-                        ty,
+                        ty: ty.inner.to_zngur(aliases, base),
                         layout,
                         methods,
                         wellknown_traits: wt,
@@ -474,11 +472,10 @@ Use one of `#layout(size = X, align = Y)`, `#heap_allocated` or `#only_by_ref`."
                         cpp_ref,
                     },
                     r,
-                    span,
+                    ty.span,
                 );
             }
             ProcessedItem::Trait { tr, methods } => {
-                let span = tr.span;
                 checked_merge(
                     ZngurTrait {
                         tr: tr.inner.to_zngur(aliases, base),
@@ -488,11 +485,10 @@ Use one of `#layout(size = X, align = Y)`, `#heap_allocated` or `#only_by_ref`."
                             .collect(),
                     },
                     r,
-                    span,
+                    tr.span,
                 );
             }
             ProcessedItem::Fn(f) => {
-                let span = f.span;
                 let method = f.inner.to_zngur(aliases, base);
                 checked_merge(
                     ZngurFn {
@@ -505,7 +501,7 @@ Use one of `#layout(size = X, align = Y)`, `#heap_allocated` or `#only_by_ref`."
                         output: method.output,
                     },
                     r,
-                    span,
+                    f.span,
                 );
             }
             ProcessedItem::ExternCpp(items) => {
@@ -525,7 +521,6 @@ Use one of `#layout(size = X, align = Y)`, `#heap_allocated` or `#only_by_ref`."
                             );
                         }
                         ParsedExternCppItem::Impl { tr, ty, methods } => {
-                            let span = ty.span;
                             checked_merge(
                                 ZngurExternCppImpl {
                                     tr: tr.map(|x| x.to_zngur(aliases, base)),
@@ -536,7 +531,7 @@ Use one of `#layout(size = X, align = Y)`, `#heap_allocated` or `#only_by_ref`."
                                         .collect(),
                                 },
                                 r,
-                                span,
+                                ty.span,
                             );
                         }
                     }
@@ -554,7 +549,7 @@ Use one of `#layout(size = X, align = Y)`, `#heap_allocated` or `#only_by_ref`."
                 match ConvertPanicToException(true).merge(r) {
                     Ok(()) => {}
                     Err(_) => {
-                        unreachable!() // For now, this also can't have conflicts.
+                        unreachable!() // For now, CPtE also can't have conflicts.
                     }
                 }
             }
