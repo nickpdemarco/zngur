@@ -654,9 +654,10 @@ static LATEST_FILENAME: Mutex<String> = Mutex::new(String::new());
 static LATEST_TEXT: Mutex<String> = Mutex::new(String::new());
 
 impl<'a> ParsedZngFile<'a> {
-    pub fn parse_into(zngur: &mut ZngurSpec, path: std::path::PathBuf) {
-        let filename = &path.file_name().unwrap().to_str().unwrap();
-        let text = std::fs::read_to_string(&path).unwrap();
+    pub fn parse_into(zngur: &mut ZngurSpec, text: &str, path: Option<std::path::PathBuf>) {
+        let filename = path.as_ref().map_or("<string literal>", |p| {
+            p.file_name().unwrap().to_str().unwrap()
+        });
         *LATEST_FILENAME.lock().unwrap() = filename.to_string();
         *LATEST_TEXT.lock().unwrap() = text.to_string();
 
@@ -680,19 +681,20 @@ impl<'a> ParsedZngFile<'a> {
         let (aliases, items) = ast.0.0.into_iter().partition_map(partition_parsed_item_vec);
         ProcessedZngFile::new(aliases, items).into_zngur_spec(zngur);
 
-        let dirname = path.parent().unwrap();
-        eprintln!("dirname: {:?}", dirname);
-        for import in std::mem::take(&mut zngur.imports) {
-            match dirname.join(&import.0).canonicalize() {
-                Ok(path) => {
-                    eprintln!("path: {:?}", path);
-                    Self::parse_into(zngur, path);
-                }
-                Err(_) => {
-                    // TODO: emit a better error. How should we get a span here?
-                    // I'd like to avoid putting a ParsedImportPath in ZngurSpec, and
-                    // also not have to pass a filename to add_to_zngur_spec.
-                    eprintln!("Import path {:?} not found", import.0);
+        if let Some(path) = path {
+            let dirname = path.parent().unwrap();
+            for import in std::mem::take(&mut zngur.imports) {
+                match dirname.join(&import.0).canonicalize() {
+                    Ok(path) => {
+                        let text = std::fs::read_to_string(&path).unwrap();
+                        Self::parse_into(zngur, &text, Some(path));
+                    }
+                    Err(_) => {
+                        // TODO: emit a better error. How should we get a span here?
+                        // I'd like to avoid putting a ParsedImportPath in ZngurSpec, and
+                        // also not have to pass a filename to add_to_zngur_spec.
+                        eprintln!("Import path {:?} not found", import.0);
+                    }
                 }
             }
         }
@@ -700,7 +702,14 @@ impl<'a> ParsedZngFile<'a> {
 
     pub fn parse(path: std::path::PathBuf) -> ZngurSpec {
         let mut zngur = ZngurSpec::default();
-        Self::parse_into(&mut zngur, path);
+        let text = std::fs::read_to_string(&path).unwrap();
+        Self::parse_into(&mut zngur, &text, Some(path));
+        zngur
+    }
+
+    pub fn parse_str(text: &str) -> ZngurSpec {
+        let mut zngur = ZngurSpec::default();
+        Self::parse_into(&mut zngur, text, None);
         zngur
     }
 }
