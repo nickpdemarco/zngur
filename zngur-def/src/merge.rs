@@ -1,6 +1,6 @@
 use crate::{
-    AdditionalIncludes, ConvertPanicToException, ZngurExternCppFn, ZngurExternCppImpl, ZngurFn,
-    ZngurSpec, ZngurTrait, ZngurType,
+    AdditionalIncludes, ConvertPanicToException, CppRef, CppValue, ZngurExternCppFn,
+    ZngurExternCppImpl, ZngurFn, ZngurSpec, ZngurTrait, ZngurType,
 };
 use std::vec::Vec;
 
@@ -23,6 +23,21 @@ fn push_unique<T: Eq>(item: T, smallvec: &mut Vec<T>) {
 fn merge_unique<T: Eq>(other: Vec<T>, smallvec: &mut Vec<T>) {
     for item in other {
         push_unique(item, smallvec);
+    }
+}
+
+impl<T: Merge> Merge for Option<T> {
+    fn merge(self, into: &mut Self) -> MergeResult {
+        match self {
+            Some(a) => match into.as_mut() {
+                Some(b) => a.merge(b),
+                None => {
+                    *into = Some(a);
+                    Ok(())
+                }
+            },
+            None => Ok(()),
+        }
     }
 }
 
@@ -64,11 +79,13 @@ impl Merge for ZngurType {
             return Err(MergeFailure::Conflict("Layout mismatch".to_string()));
         }
 
+        self.cpp_value.merge(&mut into.cpp_value)?;
+        self.cpp_ref.merge(&mut into.cpp_ref)?;
+
         merge_unique(self.wellknown_traits, &mut into.wellknown_traits);
         merge_unique(self.methods, &mut into.methods);
         merge_unique(self.constructors, &mut into.constructors);
         merge_unique(self.fields, &mut into.fields);
-        // TODO: cpp_value, cpp_ref. What are the semantics here?
 
         Ok(())
     }
@@ -85,6 +102,24 @@ impl Merge for ZngurTrait {
 
         merge_unique(self.methods, &mut into.methods);
 
+        Ok(())
+    }
+}
+
+impl Merge for CppValue {
+    fn merge(self, into: &mut Self) -> MergeResult {
+        if self != *into {
+            return Err(MergeFailure::Conflict("Cpp value mismatch".to_string()));
+        }
+        Ok(())
+    }
+}
+
+impl Merge for CppRef {
+    fn merge(self, into: &mut Self) -> MergeResult {
+        if self != *into {
+            return Err(MergeFailure::Conflict("Cpp ref mismatch".to_string()));
+        }
         Ok(())
     }
 }

@@ -5,10 +5,10 @@ use chumsky::prelude::*;
 use itertools::{Either, Itertools};
 
 use zngur_def::{
-    AdditionalIncludes, ConvertPanicToException, Import, LayoutPolicy, Merge, MergeFailure,
-    Mutability, PrimitiveRustType, RustPathAndGenerics, RustTrait, RustType, ZngurConstructor,
-    ZngurExternCppFn, ZngurExternCppImpl, ZngurField, ZngurFn, ZngurMethod, ZngurMethodDetails,
-    ZngurMethodReceiver, ZngurSpec, ZngurTrait, ZngurType, ZngurWellknownTrait,
+    AdditionalIncludes, ConvertPanicToException, CppRef, CppValue, Import, LayoutPolicy, Merge,
+    MergeFailure, Mutability, PrimitiveRustType, RustPathAndGenerics, RustTrait, RustType,
+    ZngurConstructor, ZngurExternCppFn, ZngurExternCppImpl, ZngurField, ZngurFn, ZngurMethod,
+    ZngurMethodDetails, ZngurMethodReceiver, ZngurSpec, ZngurTrait, ZngurType, ZngurWellknownTrait,
 };
 
 pub type Span = SimpleSpan<usize>;
@@ -394,7 +394,7 @@ impl ProcessedItem<'_> {
                             });
                         }
                         ParsedTypeItem::CppValue { field, cpp_type } => {
-                            cpp_value = Some((field.to_owned(), cpp_type.to_owned()));
+                            cpp_value = Some(CppValue(field.to_owned(), cpp_type.to_owned()));
                         }
                         ParsedTypeItem::CppRef { cpp_type } => {
                             match layout_span {
@@ -407,7 +407,7 @@ impl ProcessedItem<'_> {
                                     layout_span = Some(item_span);
                                 }
                             }
-                            cpp_ref = Some(cpp_type.to_owned());
+                            cpp_ref = Some(CppRef(cpp_type.to_owned()));
                         }
                     }
                 }

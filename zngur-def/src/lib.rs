@@ -96,6 +96,18 @@ pub struct ZngurMethodDetails {
     pub deref: Option<RustType>,
 }
 
+#[derive(Debug, PartialEq, Eq)]
+pub struct CppValue(pub String, pub String);
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct CppRef(pub String);
+
+impl Display for CppRef {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 #[derive(Debug)]
 pub struct ZngurType {
     pub ty: RustType,
@@ -104,8 +116,8 @@ pub struct ZngurType {
     pub methods: Vec<ZngurMethodDetails>,
     pub constructors: Vec<ZngurConstructor>,
     pub fields: Vec<ZngurField>,
-    pub cpp_value: Option<(String, String)>,
-    pub cpp_ref: Option<String>,
+    pub cpp_value: Option<CppValue>,
+    pub cpp_ref: Option<CppRef>,
 }
 
 #[derive(Debug)]

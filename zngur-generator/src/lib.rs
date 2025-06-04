@@ -168,9 +168,9 @@ impl ZngurGenerator {
                 fields,
                 methods: cpp_methods,
                 wellknown_traits,
-                cpp_value: ty_def.cpp_value.map(|(field, cpp_type)| {
-                    let rust_link_name = rust_file.add_cpp_value_bridge(&ty, &field);
-                    (rust_link_name, cpp_type)
+                cpp_value: ty_def.cpp_value.map(|mut cpp_value| {
+                    cpp_value.0 = rust_file.add_cpp_value_bridge(&ty, &cpp_value.0);
+                    cpp_value
                 }),
                 cpp_ref: ty_def.cpp_ref,
                 from_trait: if let RustType::Boxed(b) = &ty {
