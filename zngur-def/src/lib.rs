@@ -54,7 +54,7 @@ pub struct ZngurConstructor {
     pub inputs: Vec<(String, RustType)>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct ZngurField {
     pub name: String,
     pub ty: RustType,

@@ -67,7 +67,8 @@ impl Merge for ZngurType {
         merge_unique(self.wellknown_traits, &mut into.wellknown_traits);
         merge_unique(self.methods, &mut into.methods);
         merge_unique(self.constructors, &mut into.constructors);
-        // TODO: cpp_value, cpp_ref
+        merge_unique(self.fields, &mut into.fields);
+        // TODO: cpp_value, cpp_ref. What are the semantics here?
 
         Ok(())
     }
