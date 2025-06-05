@@ -287,7 +287,7 @@ impl ProcessedItem<'_> {
             }
             ProcessedItem::Import(path) => {
                 if path.path.is_absolute() {
-                  create_and_emit_error("Absolute paths imports are not supported.", path.span)
+                    create_and_emit_error("Absolute paths imports are not supported.", path.span)
                 }
                 r.imports.push(Import(path.path));
             }

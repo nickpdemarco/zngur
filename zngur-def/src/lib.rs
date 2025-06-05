@@ -90,7 +90,7 @@ pub enum LayoutPolicy {
 }
 
 impl LayoutPolicy {
-  pub const ZERO_SIZED_TYPE: Self = LayoutPolicy::StackAllocated { size: 0, align: 1 };
+    pub const ZERO_SIZED_TYPE: Self = LayoutPolicy::StackAllocated { size: 0, align: 1 };
 }
 
 #[derive(Debug, PartialEq, Eq)]
