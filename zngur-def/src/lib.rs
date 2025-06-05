@@ -89,6 +89,10 @@ pub enum LayoutPolicy {
     OnlyByRef,
 }
 
+impl LayoutPolicy {
+  pub const ZERO_SIZED_TYPE: Self = LayoutPolicy::StackAllocated { size: 0, align: 1 };
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub struct ZngurMethodDetails {
     pub data: ZngurMethod,

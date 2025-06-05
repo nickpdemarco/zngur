@@ -37,7 +37,7 @@ impl ZngurGenerator {
             RustType::UNIT,
             ZngurType {
                 ty: RustType::UNIT,
-                layout: LayoutPolicy::StackAllocated { size: 0, align: 1 },
+                layout: LayoutPolicy::ZERO_SIZED_TYPE,
                 wellknown_traits: vec![ZngurWellknownTrait::Copy],
                 methods: vec![],
                 constructors: vec![],

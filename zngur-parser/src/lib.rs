@@ -402,8 +402,7 @@ impl ProcessedItem<'_> {
                                     create_and_emit_error("Duplicate layout policy found", span);
                                 }
                                 None => {
-                                    layout =
-                                        Some(LayoutPolicy::StackAllocated { size: 0, align: 1 });
+                                    layout = Some(LayoutPolicy::ZERO_SIZED_TYPE);
                                     layout_span = Some(item_span);
                                 }
                             }
