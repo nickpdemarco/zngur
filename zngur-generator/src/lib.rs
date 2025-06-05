@@ -33,19 +33,16 @@ impl ZngurGenerator {
         let mut zng = self.0;
 
         // Unit type is a bit special, and almost everyone needs it, so we add it ourself.
-        zng.types.insert(
-            RustType::UNIT,
-            ZngurType {
-                ty: RustType::UNIT,
-                layout: LayoutPolicy::ZERO_SIZED_TYPE,
-                wellknown_traits: vec![ZngurWellknownTrait::Copy],
-                methods: vec![],
-                constructors: vec![],
-                fields: vec![],
-                cpp_value: None,
-                cpp_ref: None,
-            },
-        );
+        zng.types.push(ZngurType {
+            ty: RustType::UNIT,
+            layout: LayoutPolicy::ZERO_SIZED_TYPE,
+            wellknown_traits: vec![ZngurWellknownTrait::Copy],
+            methods: vec![],
+            constructors: vec![],
+            fields: vec![],
+            cpp_value: None,
+            cpp_ref: None,
+        });
         let mut cpp_file = CppFile::default();
         cpp_file.additional_includes = zng.additional_includes.0;
         let mut rust_file = RustFile::default();
@@ -58,7 +55,8 @@ impl ZngurGenerator {
             rust_file.enable_panic_to_exception();
             cpp_file.panic_to_exception = true;
         }
-        for (ty, ty_def) in zng.types {
+        for ty_def in zng.types {
+            let ty = &ty_def.ty;
             let is_copy = ty_def.wellknown_traits.contains(&ZngurWellknownTrait::Copy);
             match ty_def.layout {
                 LayoutPolicy::StackAllocated { size, align } => {

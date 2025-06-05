@@ -141,7 +141,7 @@ pub struct Import(pub std::path::PathBuf);
 #[derive(Debug, Default)]
 pub struct ZngurSpec {
     pub imports: Vec<Import>,
-    pub types: HashMap<RustType, ZngurType>,
+    pub types: Vec<ZngurType>,
     pub traits: HashMap<RustTrait, ZngurTrait>,
     pub funcs: Vec<ZngurFn>,
     pub extern_cpp_funcs: Vec<ZngurExternCppFn>,

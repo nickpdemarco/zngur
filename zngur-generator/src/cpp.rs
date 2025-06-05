@@ -1135,7 +1135,7 @@ namespace rust {{
         template<>
         inline void __zngur_internal_assume_init< {ty} >({ty}&) noexcept {{
         }}
-    
+
         template<>
         inline void __zngur_internal_assume_deinit< {ty} >({ty}&) noexcept {{
         }}
@@ -1157,7 +1157,7 @@ namespace rust {{
         inline void __zngur_internal_assume_init< {ty} >({ty}& t) noexcept {{
             t.drop_flag = true;
         }}
-    
+
         template<>
         inline void __zngur_internal_assume_deinit< {ty} >({ty}& t) noexcept {{
             ::rust::__zngur_internal_check_init< {ty} >(t);

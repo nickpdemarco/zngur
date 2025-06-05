@@ -183,7 +183,12 @@ impl Merge for CppRef {
 impl Merge<ZngurSpec> for ZngurType {
     /// Merges a type into a specification's type list.
     fn merge(self, into: &mut ZngurSpec) -> MergeResult {
-        [(self.ty.clone(), self)].merge(&mut into.types)
+        if let Some(existing) = into.types.iter_mut().find(|t| t.ty == self.ty) {
+            self.merge(existing)?;
+        } else {
+            into.types.push(self);
+        }
+        Ok(())
     }
 }
 
