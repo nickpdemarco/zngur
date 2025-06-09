@@ -1,18 +1,17 @@
-17
-s[2] = 7
+=== Import/Merge Demonstration ===
 
-thread '<unnamed>' panicked at examples/simple_import/src/generated.rs:235:39:
-called `Option::unwrap()` on a `None` value
-note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
-s[4] = Rust panic happened
-hello 2 2
-hello 5 7
-hello 7 14
-hello 3 17
-34 17
-vector iterator has been destructed
-[main.cpp:71] t = [
+foo(): Creating a Rust Vec<i32>
+  Vec contents: [main.cpp:16] numbers = [
     10,
     20,
-    60,
+    30,
 ]
+  Vec is_empty(): 0
+  After clear(), is_empty(): 1
+
+bar(): Creating Rust Option<String>
+  some_value.is_some(): 1
+  none_value.is_none(): 1
+  Unwrapped string: [main.cpp:36] unwrapped_string = ""
+
+=== Extended APIs from main.zng working alongside imported APIs ===
