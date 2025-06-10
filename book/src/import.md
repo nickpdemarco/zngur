@@ -4,20 +4,49 @@ The `import` directive allows you to include type definitions and other declarat
 
 ## Syntax
 
+Zngur supports two types of import statements:
+
 ```zng
+// File path imports (relative to current file)
 import "path/to/file.zng";
+
+// Dependency-based imports (from Cargo dependencies)
+import "@dependency-name/path/to/file.zng";
 ```
 
 ## Path Resolution
 
-Import paths are resolved relative to the directory containing the current `.zng` file:
+### File Path Imports
 
-- `import "./types.zng";` or
-- `import "subdir/types.zng";`
+File path imports are resolved relative to the directory containing the current `.zng` file:
 
-At this time, absolute paths are not supported.
+- `import "./types.zng";` - relative to current directory
+- `import "subdir/types.zng";` - relative subdirectory
 
 Above, "current" refers to the `.zng` file being parsed, which is not necessarily the top-level `.zng` file passed to `zngur` on the command line.
+
+**Note**: Absolute paths (e.g., `"/absolute/path.zng"`) are not supported.
+
+### Dependency-Based Imports
+
+Dependency-based imports use the `@dependency-name/path` syntax to reference files within Cargo dependencies:
+
+- `import "@my-crate/types.zng";` - imports `types.zng` from the root of the `my-crate` dependency
+- `import "@my-crate/subdir/types.zng";` - imports from a subdirectory within the dependency
+
+The dependency name corresponds to the name used in your `Cargo.toml` dependencies section. If you've renamed a dependency, use the renamed version.
+
+**Requirements**:
+- Dependency-based imports require the `--cargo-manifest` flag to specify the path to your `Cargo.toml` file
+- If your project is a workspace with multiple packages, you may also need the `--package` flag to specify which package's dependencies to use
+
+```bash
+# Basic usage with cargo manifest
+zngur generate main.zng --cargo-manifest ./Cargo.toml
+
+# Workspace usage with specific package
+zngur generate main.zng --cargo-manifest ./Cargo.toml --package my-package
+```
 
 ## Behavior
 
@@ -34,54 +63,11 @@ Zngur's merge algorithm attempts to compute the union of each set of declaration
 
 ## Example
 
-**main.zng:**
-```zng
-import "./core_types.zng";
-import "./iterators.zng";
+For a complete working example of both file path and dependency-based imports, see the [`examples/import`](https://github.com/zngur/zngur/tree/main/examples/import) directory in the repository.
 
-type MyApp {
-    #layout(size = 8, align = 8);
+This example demonstrates:
 
-    fn run(&self) -> i32;
-}
-```
-
-**core_types.zng:**
-```zng
-#convert_panic_to_exception
-
-mod ::std {
-    type option::Option<i32> {
-        #layout(size = 8, align = 4);
-        wellknown_traits(Copy);
-
-        constructor None;
-        constructor Some(i32);
-
-        fn unwrap(self) -> i32;
-    }
-
-    mod vec {
-        type Vec<i32> {
-            #layout(size = 24, align = 8);
-            fn new() -> Vec<i32>;
-            fn push(&mut self, i32);
-        }
-    }
-}
-```
-
-**iterators.zng:**
-```zng
-mod ::std {
-    mod vec {
-        type Vec<i32> {
-            fn into_iter(self) -> ::std::vec::IntoIter<i32>;
-        }
-    }
-}
-```
-
-In this example, `main.zng` imports type definitions from two separate files, allowing for better organization of the zngur specification.
-
-Notice that `iterators.zng` is able to "reopen" the `::std::vec::Vec<i32>` specification and extend it with a single function, `into_iter`. It does not need to respecify the `#layout` because that is already declared in `core_types.zng`.
+- Using `@dependency-name/file.zng` syntax with renamed dependencies
+- Merging type definitions across multiple imported files
+- Extending imported types with additional methods
+- Proper `Cargo.toml` configuration for dependency imports
