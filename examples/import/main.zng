@@ -1,7 +1,6 @@
-// Main module - imports foo and bar modules to demonstrate import/merge
-
-import "./foo.zng";
-import "./bar.zng";
+import "@foo/foo.zng";
+// Note the rename here
+import "@baz/bar.zng";
 
 // Note: All APIs from foo.zng and bar.zng are now available
 // Primitives from primitives.zng are also available transitively

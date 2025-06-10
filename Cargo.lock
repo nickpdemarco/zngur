@@ -94,6 +94,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d468802bab17cbc0cc575e9b053f41e72aa36bfa6b7f55e3529ffa43161b97fa"
 
 [[package]]
+name = "bar"
+version = "0.1.0"
+
+[[package]]
 name = "benchmark"
 version = "0.1.0"
 dependencies = [
@@ -354,6 +358,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "43da5946c66ffcc7745f48db692ffbb10a83bfe0afd96235c5c2a4fb23994929"
 
 [[package]]
+name = "dependency_import"
+version = "0.1.0"
+dependencies = [
+ "bar",
+ "foo",
+]
+
+[[package]]
 name = "dissimilar"
 version = "1.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -444,10 +456,6 @@ name = "example-simple"
 version = "0.6.0"
 
 [[package]]
-name = "example-simple-import"
-version = "0.6.0"
-
-[[package]]
 name = "example-tutorial"
 version = "0.6.0"
 
@@ -486,6 +494,10 @@ name = "foldhash"
 version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a0d2fde1f7b3d48b8395d5f2de76c18a528bd6a9cdde438df747bfcba3e05d6f"
+
+[[package]]
+name = "foo"
+version = "0.1.0"
 
 [[package]]
 name = "half"
