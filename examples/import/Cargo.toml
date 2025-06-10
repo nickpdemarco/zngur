@@ -1,0 +1,15 @@
+[package]
+name = "dependency_import"
+version = "0.1.0"
+publish = ["artifactory"]
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+foo = { path = "./deps/foo" }
+# Note the rename to baz. We'll use that in the import statement.
+baz = { path = "./deps/bar", package = "bar" }

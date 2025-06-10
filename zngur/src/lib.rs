@@ -7,6 +7,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+pub use zngur_def::{DependencyMap, PackageSpec};
 use zngur_generator::{ParsedZngFile, ZngurGenerator};
 
 #[must_use]
@@ -27,6 +28,7 @@ pub struct Zngur {
     h_file_path: Option<PathBuf>,
     cpp_file_path: Option<PathBuf>,
     rs_file_path: Option<PathBuf>,
+    package_spec: Option<PackageSpec>,
 }
 
 impl Zngur {
@@ -36,6 +38,7 @@ impl Zngur {
             h_file_path: None,
             cpp_file_path: None,
             rs_file_path: None,
+            package_spec: None,
         }
     }
 
@@ -54,8 +57,30 @@ impl Zngur {
         self
     }
 
+    pub fn with_package_spec(mut self, package_spec: PackageSpec) -> Self {
+        self.package_spec = Some(package_spec);
+        self
+    }
+
+    pub fn with_cargo_manifest(mut self, path: Option<impl AsRef<Path>>) -> Self {
+        self.package_spec = path.map(|p| PackageSpec::new(p.as_ref()));
+        self
+    }
+
     pub fn generate(self) {
-        let file = ZngurGenerator::build_from_zng(ParsedZngFile::parse(self.zng_file));
+        let dep_map = self
+            .package_spec
+            .map(|spec| {
+                DependencyMap::from_package_spec(&spec)
+                    .inspect_err(|e| {
+                        eprintln!("Warning: Failed to parse cargo metadata: {}", e);
+                    })
+                    .ok()
+            })
+            .flatten();
+
+        let file =
+            ZngurGenerator::build_from_zng(ParsedZngFile::parse(self.zng_file, dep_map.as_ref()));
 
         let (rust, h, cpp) = file.render();
         let rs_file_path = self.rs_file_path.expect("No rs file path provided");

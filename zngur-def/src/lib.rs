@@ -1,5 +1,6 @@
 use std::{collections::HashMap, fmt::Display};
 
+use cargo_metadata::{DependencyKind, MetadataCommand};
 use itertools::Itertools;
 
 mod merge;
@@ -136,8 +137,43 @@ pub struct AdditionalIncludes(pub String);
 #[derive(Debug, Default)]
 pub struct ConvertPanicToException(pub bool);
 
-#[derive(Clone, Debug, Default)]
-pub struct Import(pub std::path::PathBuf);
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Import {
+    /// Regular file path import: import "path/to/file.zng"
+    FilePath(std::path::PathBuf),
+    /// Dependency-based import: import @crate-name/path/to/file.zng
+    DependencyPath {
+        crate_name: String,
+        relative_path: std::path::PathBuf,
+    },
+}
+
+impl Import {
+    pub fn canonicalize(
+        &self,
+        current_dir: &std::path::Path,
+        dep_map: Option<&DependencyMap>,
+    ) -> Result<std::path::PathBuf, String> {
+        match self {
+            Import::FilePath(path) => match current_dir.join(path).canonicalize() {
+                Ok(resolved_path) => Ok(resolved_path),
+                Err(_) => Err(format!("File not found: {}", path.display())),
+            },
+            Import::DependencyPath {
+                crate_name,
+                relative_path,
+            } => dep_map
+                .ok_or("Dependency-based imports require cargo manifest to be provided")?
+                .get_dependency_path(crate_name)
+                .map(|crate_root| crate_root.join(relative_path))
+                .ok_or(format!(
+                    "Dependency '{}' not found in cargo metadata",
+                    crate_name
+                )),
+        }
+    }
+}
+
 #[derive(Debug, Default)]
 pub struct ZngurSpec {
     pub imports: Vec<Import>,
@@ -148,6 +184,7 @@ pub struct ZngurSpec {
     pub extern_cpp_impls: Vec<ZngurExternCppImpl>,
     pub additional_includes: AdditionalIncludes,
     pub convert_panic_to_exception: ConvertPanicToException,
+    pub cargo_manifest_path: Option<std::path::PathBuf>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -281,5 +318,93 @@ impl Display for RustType {
             }
             RustType::Slice(s) => write!(f, "[{s}]"),
         }
+    }
+}
+
+/// Specifies a package within a Cargo workspace or standalone project.
+#[derive(Debug, Clone)]
+pub struct PackageSpec {
+    pub manifest_path: std::path::PathBuf,
+    pub package_name: Option<String>,
+}
+
+impl PackageSpec {
+    pub fn new(manifest_path: impl AsRef<std::path::Path>) -> Self {
+        Self {
+            manifest_path: manifest_path.as_ref().to_owned(),
+            package_name: None,
+        }
+    }
+
+    pub fn with_package(mut self, package_name: String) -> Self {
+        self.package_name = Some(package_name);
+        self
+    }
+}
+
+/// Maps canonical dependency names to their manifest parent directories.
+///
+/// A canonical dependency name is the name used by the parent project to refer to
+/// it in `use` statements. If the package is renamed, the canonical name is the
+/// new name. Otherwise, it is the same as the package name.
+#[derive(Debug, Clone)]
+pub struct DependencyMap {
+    dependencies: HashMap<String, std::path::PathBuf>,
+}
+
+impl DependencyMap {
+    pub fn new() -> Self {
+        Self {
+            dependencies: HashMap::new(),
+        }
+    }
+
+    pub fn from_package_spec(
+        package_spec: &PackageSpec,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        let metadata = MetadataCommand::new()
+            .manifest_path(&package_spec.manifest_path)
+            .exec()?;
+
+        let package_by_name = |name: &str| metadata.packages.iter().find(|pkg| pkg.name == name);
+
+        let target_package = if let Some(package_name) = &package_spec.package_name {
+            package_by_name(package_name).ok_or(format!(
+                "Package '{}' not found in cargo metadata",
+                package_name
+            ))?
+        } else {
+            metadata
+                .root_package()
+                .ok_or("No root package found in cargo metadata and no package specified")?
+        };
+
+        return Ok(Self {
+            dependencies: target_package
+                .dependencies
+                .iter()
+                .filter(|d| d.kind == DependencyKind::Normal)
+                .filter_map(|d| {
+                    package_by_name(&d.name).map(|pkg| (pkg, d.rename.as_ref().unwrap_or(&d.name)))
+                })
+                .map(|(pkg, rename)| (rename.clone(), pkg.manifest_path.parent().unwrap().into()))
+                .collect::<HashMap<_, _>>(),
+        });
+    }
+
+    pub fn from_cargo_manifest(
+        manifest_path: &std::path::Path,
+        package_name: Option<&str>,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        let package_spec = PackageSpec {
+            manifest_path: manifest_path.to_owned(),
+            package_name: package_name.map(|s| s.to_owned()),
+        };
+        Self::from_package_spec(&package_spec)
+    }
+
+    /// Get the root directory path for a dependency by its canonical name
+    pub fn get_dependency_path(&self, crate_name: &str) -> Option<&std::path::PathBuf> {
+        self.dependencies.get(crate_name)
     }
 }
