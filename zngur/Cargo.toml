@@ -11,3 +11,5 @@ license.workspace = true
 
 [dependencies]
 zngur-generator = { version = "=0.6.0", path = "../zngur-generator" }
+zngur-def = { version = "=0.6.0", path = "../zngur-def" }
+cargo_metadata = "0.18"

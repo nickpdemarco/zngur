@@ -5,10 +5,11 @@ use chumsky::prelude::*;
 use itertools::{Either, Itertools};
 
 use zngur_def::{
-    AdditionalIncludes, ConvertPanicToException, CppRef, CppValue, Import, LayoutPolicy, Merge,
-    MergeFailure, Mutability, PrimitiveRustType, RustPathAndGenerics, RustTrait, RustType,
-    ZngurConstructor, ZngurExternCppFn, ZngurExternCppImpl, ZngurField, ZngurFn, ZngurMethod,
-    ZngurMethodDetails, ZngurMethodReceiver, ZngurSpec, ZngurTrait, ZngurType, ZngurWellknownTrait,
+    AdditionalIncludes, ConvertPanicToException, CppRef, CppValue, DependencyMap, Import,
+    LayoutPolicy, Merge, MergeFailure, Mutability, PrimitiveRustType, RustPathAndGenerics,
+    RustTrait, RustType, ZngurConstructor, ZngurExternCppFn, ZngurExternCppImpl, ZngurField,
+    ZngurFn, ZngurMethod, ZngurMethodDetails, ZngurMethodReceiver, ZngurSpec, ZngurTrait,
+    ZngurType, ZngurWellknownTrait,
 };
 
 pub type Span = SimpleSpan<usize>;
@@ -128,9 +129,18 @@ impl ParsedAlias<'_> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct ParsedImportPath {
-    path: std::path::PathBuf,
-    span: Span,
+enum ParsedImportPath {
+    /// Regular file path import: import "path/to/file.zng"
+    FilePath {
+        path: std::path::PathBuf,
+        span: Span,
+    },
+    /// Dependency-based import: import "@crate-name/path/to/file.zng"
+    DependencyPath {
+        crate_name: String,
+        relative_path: std::path::PathBuf,
+        span: Span,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -285,12 +295,24 @@ impl ProcessedItem<'_> {
                     item.add_to_zngur_spec(r, &mod_aliases, &base);
                 }
             }
-            ProcessedItem::Import(path) => {
-                if path.path.is_absolute() {
-                    create_and_emit_error("Absolute paths imports are not supported.", path.span)
+            ProcessedItem::Import(path) => match path {
+                ParsedImportPath::FilePath { path, span } => {
+                    if path.is_absolute() {
+                        create_and_emit_error("Absolute paths imports are not supported.", span)
+                    }
+                    r.imports.push(Import::FilePath(path));
                 }
-                r.imports.push(Import(path.path));
-            }
+                ParsedImportPath::DependencyPath {
+                    crate_name,
+                    relative_path,
+                    span: _,
+                } => {
+                    r.imports.push(Import::DependencyPath {
+                        crate_name,
+                        relative_path,
+                    });
+                }
+            },
             ProcessedItem::Type { ty, items } => {
                 if ty.inner == ParsedRustType::Tuple(vec![]) {
                     // We add unit type implicitly.
@@ -656,7 +678,12 @@ static LATEST_FILENAME: Mutex<String> = Mutex::new(String::new());
 static LATEST_TEXT: Mutex<String> = Mutex::new(String::new());
 
 impl<'a> ParsedZngFile<'a> {
-    pub fn parse_into(zngur: &mut ZngurSpec, text: &str, path: Option<std::path::PathBuf>) {
+    pub fn parse_into(
+        zngur: &mut ZngurSpec,
+        text: &str,
+        path: Option<std::path::PathBuf>,
+        dep_map: Option<&DependencyMap>,
+    ) {
         let filename = path.as_ref().map_or("<string literal>", |p| {
             p.file_name().unwrap().to_str().unwrap()
         });
@@ -684,34 +711,31 @@ impl<'a> ParsedZngFile<'a> {
         ProcessedZngFile::new(aliases, items).into_zngur_spec(zngur);
 
         if let Some(path) = path {
-            let dirname = path.parent().unwrap();
+            let current_dir = path.parent().unwrap();
             for import in std::mem::take(&mut zngur.imports) {
-                match dirname.join(&import.0).canonicalize() {
-                    Ok(path) => {
-                        let text = std::fs::read_to_string(&path).unwrap();
-                        Self::parse_into(zngur, &text, Some(path));
+                match import.canonicalize(current_dir, dep_map) {
+                    Ok(resolved_path) => {
+                        let text = std::fs::read_to_string(&resolved_path).unwrap();
+                        Self::parse_into(zngur, &text, Some(resolved_path), dep_map);
                     }
-                    Err(_) => {
-                        // TODO: emit a better error. How should we get a span here?
-                        // I'd like to avoid putting a ParsedImportPath in ZngurSpec, and
-                        // also not have to pass a filename to add_to_zngur_spec.
-                        eprintln!("Import path {:?} not found", import.0);
+                    Err(e) => {
+                        eprintln!("Import error: {}", e);
                     }
                 }
             }
         }
     }
 
-    pub fn parse(path: std::path::PathBuf) -> ZngurSpec {
+    pub fn parse(path: std::path::PathBuf, dep_map: Option<&DependencyMap>) -> ZngurSpec {
         let mut zngur = ZngurSpec::default();
         let text = std::fs::read_to_string(&path).unwrap();
-        Self::parse_into(&mut zngur, &text, Some(path));
+        Self::parse_into(&mut zngur, &text, Some(path), dep_map);
         zngur
     }
 
     pub fn parse_str(text: &str) -> ZngurSpec {
         let mut zngur = ZngurSpec::default();
-        Self::parse_into(&mut zngur, text, None);
+        Self::parse_into(&mut zngur, text, None, None);
         zngur
     }
 }
@@ -1463,10 +1487,25 @@ fn import_item<'a>()
         })
         .then_ignore(just(Token::Semicolon))
         .map_with(|path, extra| {
-            ParsedItem::Import(ParsedImportPath {
-                path: std::path::PathBuf::from(path),
-                span: extra.span(),
-            })
+            if let Some(at_removed) = path.strip_prefix('@') {
+                if let Some((crate_name, relative_path)) = at_removed.split_once('/') {
+                    ParsedItem::Import(ParsedImportPath::DependencyPath {
+                        crate_name: crate_name.to_string(),
+                        relative_path: std::path::PathBuf::from(relative_path),
+                        span: extra.span(),
+                    })
+                } else {
+                    create_and_emit_error(
+                        "Invalid dependency import format. Expected @crate-name/path",
+                        extra.span(),
+                    )
+                }
+            } else {
+                ParsedItem::Import(ParsedImportPath::FilePath {
+                    path: std::path::PathBuf::from(path),
+                    span: extra.span(),
+                })
+            }
         })
         .boxed()
 }

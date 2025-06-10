@@ -1,7 +1,7 @@
 use std::panic::catch_unwind;
 
 use expect_test::{Expect, expect};
-use zngur_def::{RustPathAndGenerics, RustType};
+use zngur_def::{Import, RustPathAndGenerics, RustType};
 
 use crate::ParsedZngFile;
 
@@ -137,7 +137,7 @@ type MyString {
 }
     "#,
     );
-    let ty = parsed.types.values().next().expect("no type parsed");
+    let ty = parsed.types.iter().next().expect("no type parsed");
     let RustType::Adt(RustPathAndGenerics { path: p, .. }) = &ty.ty else {
         panic!("no match?");
     };
@@ -157,7 +157,7 @@ mod crate {
 }
     "#,
     );
-    let ty = parsed.types.values().next().expect("no type parsed");
+    let ty = parsed.types.iter().next().expect("no type parsed");
     let RustType::Adt(RustPathAndGenerics { path: p, .. }) = &ty.ty else {
         panic!("no match?");
     };
@@ -177,12 +177,53 @@ type Example {
     "#,
     );
     assert_eq!(parsed.imports.len(), 2);
-    assert_eq!(
-        parsed.imports[0].0,
-        std::path::PathBuf::from("./relative/path.zng")
+    match &parsed.imports[0] {
+        Import::FilePath(path) => {
+            assert_eq!(*path, std::path::PathBuf::from("./relative/path.zng"));
+        }
+        Import::DependencyPath { .. } => panic!("Expected FilePath import"),
+    }
+    match &parsed.imports[1] {
+        Import::FilePath(path) => {
+            assert_eq!(*path, std::path::PathBuf::from("/absolute/path.zng"));
+        }
+        Import::DependencyPath { .. } => panic!("Expected FilePath import"),
+    }
+}
+
+#[test]
+fn test_import_path_types() {
+    // Test file path import
+    let spec = ParsedZngFile::parse_str(
+        r#"
+        import "test/file.zng";
+    "#,
     );
-    assert_eq!(
-        parsed.imports[1].0,
-        std::path::PathBuf::from("/absolute/path.zng")
+
+    assert_eq!(spec.imports.len(), 1);
+    match &spec.imports[0] {
+        Import::FilePath(path) => {
+            assert_eq!(path.to_string_lossy(), "test/file.zng");
+        }
+        Import::DependencyPath { .. } => panic!("Expected FilePath import"),
+    }
+
+    // Test dependency-based import
+    let spec = ParsedZngFile::parse_str(
+        r#"
+        import "@my-crate/test/file.zng";
+    "#,
     );
+
+    assert_eq!(spec.imports.len(), 1);
+    match &spec.imports[0] {
+        Import::DependencyPath {
+            crate_name,
+            relative_path,
+        } => {
+            assert_eq!(crate_name, "my-crate");
+            assert_eq!(relative_path.to_string_lossy(), "test/file.zng");
+        }
+        Import::FilePath(_) => panic!("Expected DependencyPath import"),
+    }
 }
