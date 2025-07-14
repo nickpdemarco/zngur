@@ -700,8 +700,34 @@ impl<'a> ParseContext<'a> {
     }
 }
 
+/// A trait for types which can resolve filesystem-like paths relative to a given directory.
+pub trait ImportResolver {
+    fn resolve_import(
+        &self,
+        cwd: &std::path::Path,
+        relpath: &std::path::Path,
+    ) -> Result<String, String>;
+}
+
+/// A default implementation of ImportResolver which uses conventional filesystem paths and semantics.
+struct DefaultImportResolver;
+
+impl ImportResolver for DefaultImportResolver {
+    fn resolve_import(
+        &self,
+        cwd: &std::path::Path,
+        relpath: &std::path::Path,
+    ) -> Result<String, String> {
+        let path = cwd
+            .join(relpath)
+            .canonicalize()
+            .map_err(|e| e.to_string())?;
+        std::fs::read_to_string(path).map_err(|e| e.to_string())
+    }
+}
+
 impl<'a> ParsedZngFile<'a> {
-    fn parse_into(zngur: &mut ZngurSpec, ctx: &ParseContext) {
+    fn parse_into(zngur: &mut ZngurSpec, ctx: &ParseContext, resolver: &impl ImportResolver) {
         let (tokens, errs) = lexer().parse(ctx.text).into_output_errors();
         let Some(tokens) = tokens else {
             let errs = errs.into_iter().map(|e| e.map_token(|c| c.to_string()));
@@ -726,16 +752,27 @@ impl<'a> ParsedZngFile<'a> {
         if let Some(path) = &ctx.path {
             let dirname = path.parent().unwrap();
             for import in std::mem::take(&mut zngur.imports) {
-                match dirname.join(&import.0).canonicalize() {
-                    Ok(path) => {
-                        let text = std::fs::read_to_string(&path).unwrap();
-                        Self::parse_into(zngur, &ParseContext::new(Some(path), &text));
+                match resolver.resolve_import(dirname, &import.0) {
+                    Ok(text) => {
+                        Self::parse_into(
+                            zngur,
+                            &ParseContext::new(Some(import.0), &text),
+                            resolver,
+                        );
                     }
                     Err(_) => {
                         // TODO: emit a better error. How should we get a span here?
                         // I'd like to avoid putting a ParsedImportPath in ZngurSpec, and
                         // also not have to pass a filename to add_to_zngur_spec.
-                        eprintln!("Import path {:?} not found", import.0);
+                        emit_ariadne_error(
+                            &ctx,
+                            Report::build(ReportKind::Error, &ctx.filename, 0)
+                                .with_message(format!(
+                                    "Import path not found: {}",
+                                    import.0.display()
+                                ))
+                                .finish(),
+                        );
                     }
                 }
             }
@@ -745,13 +782,32 @@ impl<'a> ParsedZngFile<'a> {
     pub fn parse(path: std::path::PathBuf) -> ZngurSpec {
         let mut zngur = ZngurSpec::default();
         let text = std::fs::read_to_string(&path).unwrap();
-        Self::parse_into(&mut zngur, &ParseContext::new(Some(path), &text));
+        Self::parse_into(
+            &mut zngur,
+            &ParseContext::new(Some(path), &text),
+            &DefaultImportResolver,
+        );
         zngur
     }
 
     pub fn parse_str(text: &str) -> ZngurSpec {
         let mut zngur = ZngurSpec::default();
-        Self::parse_into(&mut zngur, &ParseContext::new(None, text));
+        Self::parse_into(
+            &mut zngur,
+            &ParseContext::new(None, text),
+            &DefaultImportResolver,
+        );
+        zngur
+    }
+
+    #[cfg(test)]
+    pub(crate) fn parse_str_with_resolver(text: &str, resolver: &impl ImportResolver) -> ZngurSpec {
+        let mut zngur = ZngurSpec::default();
+        Self::parse_into(
+            &mut zngur,
+            &ParseContext::new(Some(std::path::PathBuf::from("main.zng")), text),
+            resolver,
+        );
         zngur
     }
 }

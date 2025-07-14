@@ -115,7 +115,9 @@ impl Merge for ZngurType {
         }
 
         if self.layout != into.layout {
-            return Err(MergeFailure::Conflict("Layout mismatch".to_string()));
+            return Err(MergeFailure::Conflict(
+                "Duplicate layout policy found".to_string(),
+            ));
         }
 
         if self.cpp_ref.is_some() && into.layout != LayoutPolicy::ZERO_SIZED_TYPE {

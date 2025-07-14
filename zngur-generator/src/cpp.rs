@@ -1690,10 +1690,10 @@ namespace rust {
             .into_iter()
             .flat_map(|x| [format!("int{x}_t"), format!("uint{x}_t")])
             .chain([
-              "long".to_string(),
-              "long long".to_string(),
-              "unsigned long".to_string(),
-              "unsigned long long".to_string(),
+                "long".to_string(),
+                "long long".to_string(),
+                "unsigned long".to_string(),
+                "unsigned long long".to_string(),
             ])
             .chain([8, 16, 32, 64].into_iter().flat_map(|x| {
                 [
@@ -1716,14 +1716,17 @@ namespace rust {
                     true
                 }
                 "long" | "unsigned long" => {
-                    writeln!(state, "#if !defined(__APPLE__) && (ULONG_MAX == 0xFFFFFFFFUL)")?;
+                    writeln!(
+                        state,
+                        "#if !defined(__APPLE__) && (ULONG_MAX == 0xFFFFFFFFUL)"
+                    )?;
                     true
                 }
                 "long long" | "unsigned long long" => {
                     writeln!(state, "#if !defined(__APPLE__) && (ULLONG_MAX == SIZE_MAX)")?;
                     true
                 }
-                _ => false
+                _ => false,
             };
             writeln!(
                 state,
