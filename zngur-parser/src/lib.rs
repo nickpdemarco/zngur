@@ -756,7 +756,7 @@ impl<'a> ParsedZngFile<'a> {
                     Ok(text) => {
                         Self::parse_into(
                             zngur,
-                            &ParseContext::new(Some(import.0), &text),
+                            &ParseContext::new(Some(dirname.join(&import.0)), &text),
                             resolver,
                         );
                     }
