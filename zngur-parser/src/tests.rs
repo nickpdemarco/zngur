@@ -52,7 +52,7 @@ type () {
                ╭─[<string literal>:2:6]
                │
              2 │ type () {
-               │      ─┬
+               │      ─┬  
                │       ╰── Unit type is declared implicitly. Remove this entirely.
             ───╯
         "#]],
@@ -84,7 +84,7 @@ type () {
                ╭─[<string literal>:4:5]
                │
              4 │     welcome_traits(Copy);
-               │     ───────┬──────
+               │     ───────┬──────  
                │            ╰──────── found 'welcome_traits' expected '#', 'wellknown_traits', 'constructor', 'field', 'fn', or '}'
             ───╯
         "#]],
@@ -105,7 +105,7 @@ type ::std::string::String {
                ╭─[<string literal>:4:5]
                │
              4 │     #heap_allocated;
-               │     ───────┬───────
+               │     ───────┬───────  
                │            ╰───────── Duplicate layout policy found
             ───╯
         "#]],
@@ -127,7 +127,7 @@ type crate::Way {
                ╭─[<string literal>:3:5]
                │
              3 │     #layout(size = 1, align = 2);
-               │     ──────────────┬─────────────
+               │     ──────────────┬─────────────  
                │                   ╰─────────────── Duplicate layout policy found
             ───╯
         "#]],
@@ -251,7 +251,7 @@ fn import_has_conflict() {
                ╭─[a.zng:2:12]
                │
              2 │       type A {
-               │            ┬
+               │            ┬  
                │            ╰── Duplicate layout policy found
             ───╯
         "#]],
