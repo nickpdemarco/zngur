@@ -66,6 +66,7 @@ impl IntoCpp for RustType {
                     PrimitiveRustType::Float(64) => Some(CppType::from("double_t")),
                     PrimitiveRustType::Float(_) => unreachable!(),
                     PrimitiveRustType::Usize => Some(CppType::from("size_t")),
+                    PrimitiveRustType::CChar => Some(CppType::from("char")),
                     PrimitiveRustType::Bool | PrimitiveRustType::Str => None,
                     PrimitiveRustType::ZngurCppOpaqueOwnedObject => {
                         Some(CppType::from("rust::ZngurCppOpaqueOwnedObject"))
@@ -73,11 +74,11 @@ impl IntoCpp for RustType {
                 },
                 RustType::Raw(Mutability::Mut, t) => Some(CppType::from(&*format!(
                     "{}*",
-                    for_builtin(t)?.to_string().strip_prefix("::")?
+                    for_builtin(t)?.without_prefix()
                 ))),
                 RustType::Raw(Mutability::Not, t) => Some(CppType::from(&*format!(
                     "{} const*",
-                    for_builtin(t)?.to_string().strip_prefix("::")?
+                    for_builtin(t)?.without_prefix()
                 ))),
                 _ => None,
             }
@@ -164,7 +165,7 @@ mod zngur_types {
     impl ZngurCppOpaqueOwnedObject {
         pub unsafe fn new(
             data: *mut u8,
-            destructor: extern "C" fn(*mut u8),            
+            destructor: extern "C" fn(*mut u8),
         ) -> Self {
             Self { data, destructor }
         }
@@ -347,7 +348,7 @@ pub extern "C" fn {mangled_name}(
     destructor: extern "C" fn(*mut u8),
     o: *mut u8,
 ) {{
-    struct Wrapper {{ 
+    struct Wrapper {{
         value: ZngurCppOpaqueOwnedObject,
     }}
     impl {trait_without_assocs} for Wrapper {{
@@ -378,7 +379,7 @@ pub extern "C" fn {mangled_name}(
             self,
             r#"
     }}
-    unsafe {{ 
+    unsafe {{
         let this = Wrapper {{
             value: ZngurCppOpaqueOwnedObject::new(data, destructor),
         }};
@@ -439,7 +440,7 @@ pub extern "C" fn {mangled_name}(
             self,
             r#"
     }}
-    unsafe {{ 
+    unsafe {{
         let this = data as *mut Wrapper;
         let r: &dyn {trait_name} = &*this;
         std::ptr::write(o as *mut _, r)
@@ -864,7 +865,7 @@ pub extern "C" fn {debug_print}(v: *mut u8) {{
                 pub fn {size_fn}() -> usize {{
                     ::std::mem::size_of::<{ty}>()
                 }}
-        
+
                 #[allow(non_snake_case)]
                 #[unsafe(no_mangle)]
                 pub fn {alloc_fn}() -> *mut u8 {{

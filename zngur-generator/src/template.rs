@@ -61,7 +61,11 @@ impl<'a> CppHeaderTemplate<'a> {
         let builtins = [8, 16, 32, 64]
             .into_iter()
             .flat_map(|x| [format!("int{x}_t"), format!("uint{x}_t")])
-            .chain(["::double_t".to_owned(), "::float_t".to_owned()])
+            .chain([
+                "::double_t".to_owned(),
+                "::float_t".to_owned(),
+                "char".to_owned(), // For c_char support
+            ])
             .flat_map(|x| {
                 [
                     x.clone(),

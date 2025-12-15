@@ -72,8 +72,23 @@ impl From<&str> for CppPath {
     }
 }
 
+impl CppPath {
+    /// Returns the path without the leading :: prefix
+    pub fn without_prefix(&self) -> String {
+        self.0.iter().join("::")
+    }
+}
+
 impl Display for CppPath {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Single-segment paths that look like C types (contain spaces, *, or end with _t)
+        // should not get the :: prefix as they're raw C type strings
+        if self.0.len() == 1 {
+            let name = &self.0[0];
+            if name.contains(' ') || name.contains('*') || name.ends_with("_t") || name == "char" {
+                return write!(f, "{}", name);
+            }
+        }
         write!(f, "::{}", self.0.iter().join("::"))
     }
 }
@@ -98,6 +113,19 @@ impl sailfish::runtime::Render for CppType {
 }
 
 impl CppType {
+    /// Returns the type without the leading :: prefix (for building pointer types)
+    pub fn without_prefix(&self) -> String {
+        if self.generic_args.is_empty() {
+            self.path.without_prefix()
+        } else {
+            format!(
+                "{}< {} >",
+                self.path.without_prefix(),
+                self.generic_args.iter().map(|x| x.to_string()).join(", ")
+            )
+        }
+    }
+
     pub fn into_ref(self) -> CppType {
         CppType {
             path: CppPath::from("rust::Ref"),
